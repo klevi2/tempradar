@@ -1,0 +1,855 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TempRadar</title>
+<meta name="description" content="Model consensus, ensemble bucket chances and today's measured high for the weather stations that Polymarket and Kalshi temperature markets settle on. Free, data only.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preload" href="fonts/barlow-400-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/barlow-600-latin.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+@font-face { font-family: "Barlow"; font-style: normal; font-weight: 400; font-display: swap; src: url(fonts/barlow-400-latin-ext.woff2) format("woff2"); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: "Barlow"; font-style: normal; font-weight: 400; font-display: swap; src: url(fonts/barlow-400-latin.woff2) format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Barlow"; font-style: normal; font-weight: 500; font-display: swap; src: url(fonts/barlow-500-latin-ext.woff2) format("woff2"); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: "Barlow"; font-style: normal; font-weight: 500; font-display: swap; src: url(fonts/barlow-500-latin.woff2) format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Barlow"; font-style: normal; font-weight: 600; font-display: swap; src: url(fonts/barlow-600-latin-ext.woff2) format("woff2"); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: "Barlow"; font-style: normal; font-weight: 600; font-display: swap; src: url(fonts/barlow-600-latin.woff2) format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+
+:root {
+  color-scheme: light;
+  --page: #edf1f3;
+  --surface: #fbfcfc;
+  --ink: #14222c;
+  --ink-2: #475763;
+  --muted: #6b7a84;
+  --rule: #d9e0e4;
+  --axis: #b4c0c7;
+  --accent: #2a78d6;
+  --accent-soft: #86b6ef;
+  --accent-wash: #e3eefb;
+  --warn: #fab219;
+  --warn-ink: #6e4a00;
+  --focus: #2a78d6;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --page: #0e171d;
+    --surface: #15212a;
+    --ink: #e6edf1;
+    --ink-2: #b3c0c8;
+    --muted: #8796a0;
+    --rule: #24333d;
+    --axis: #3a4c57;
+    --accent: #3987e5;
+    --accent-soft: #184f95;
+    --accent-wash: #162f4d;
+    --warn: #fab219;
+    --warn-ink: #fbc85a;
+    --focus: #5598e7;
+  }
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--ink);
+  font: 400 15px/1.45 "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+a { color: var(--accent); text-underline-offset: 2px; }
+button, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 3px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.wrap { max-width: 1200px; margin: 0 auto; padding: 0 16px; }
+
+/* Masthead: the name, one line of purpose, and the rule that matters most. */
+.masthead { padding-top: 28px; padding-bottom: 14px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 32px; align-items: end; }
+.masthead h1 { margin: 0; font-weight: 600; font-size: 30px; line-height: 1.1; letter-spacing: -0.01em; }
+.masthead p { margin: 6px 0 0; color: var(--ink-2); max-width: 62ch; }
+.masthead .disclaimer { color: var(--muted); font-size: 13px; text-align: right; max-width: 30ch; margin: 0; }
+
+/* Filter row: one row above everything it scopes. */
+.filters { position: sticky; top: 0; z-index: 5; background: var(--page); padding-top: 10px; padding-bottom: 10px; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; border-bottom: 1px solid var(--rule); }
+.seg { display: inline-flex; border: 1px solid var(--axis); border-radius: 8px; overflow: hidden; background: var(--surface); }
+.seg button { border: 0; background: none; padding: 6px 12px; cursor: pointer; min-height: 34px; }
+.seg button + button { border-left: 1px solid var(--axis); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); font-weight: 500; }
+.seg button:focus-visible { outline-offset: -3px; }
+.search input { width: 220px; max-width: 100%; padding: 6px 10px; min-height: 34px; border: 1px solid var(--axis); border-radius: 8px; background: var(--surface); }
+.search input::placeholder { color: var(--muted); }
+.status { margin: 12px 0 8px; color: var(--ink-2); font-size: 14px; min-height: 20px; }
+.status.error { color: var(--warn-ink); }
+
+/* The board */
+table.board { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; font-variant-numeric: tabular-nums; }
+.board > thead > tr > th { text-align: left; font-weight: 500; font-size: 13px; color: var(--muted); padding: 10px 10px 8px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+.board > tbody > tr.row > td { padding: 9px 10px; border-top: 1px solid var(--rule); vertical-align: middle; }
+.board > tbody > tr.row:first-child > td { border-top: 0; }
+.board tr.row { scroll-margin-top: 72px; }
+.board > thead > tr > th.num, .board > tbody > tr.row > td.num { text-align: right; }
+.board > tbody > tr.row.is-open > td { background: var(--accent-wash); }
+.c-pin { width: 36px; padding-right: 0 !important; }
+.pin { width: 30px; height: 30px; border: 0; background: none; cursor: pointer; border-radius: 6px; color: var(--muted); display: grid; place-items: center; }
+.pin svg { width: 17px; height: 17px; }
+.pin[aria-pressed="true"] { color: var(--accent); }
+.pin:hover { color: var(--ink); }
+.expander { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 2px 0; cursor: pointer; }
+.expander .city { font-weight: 600; font-size: 16px; }
+.expander .place { display: block; color: var(--ink-2); font-size: 13px; }
+.expander .icao { color: var(--muted); }
+.expander .chev { display: inline-block; width: 10px; margin-left: 6px; color: var(--muted); transition: transform .15s ease; }
+.expander[aria-expanded="true"] .chev { transform: rotate(90deg); }
+.mkt { display: flex; gap: 4px; flex-wrap: wrap; }
+.chip { font-size: 12px; line-height: 1; padding: 4px 6px; border-radius: 5px; border: 1px solid var(--axis); color: var(--ink-2); white-space: nowrap; }
+.cons { font-size: 19px; font-weight: 600; white-space: nowrap; }
+.cons .u { font-size: 13px; font-weight: 500; color: var(--ink-2); margin-left: 1px; }
+.spread { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; white-space: nowrap; }
+.spread svg { display: block; overflow: visible; }
+.top1 { white-space: nowrap; }
+.top1 b { font-weight: 600; }
+.top1 .p { color: var(--ink-2); margin-left: 6px; }
+.load-btn { border: 1px solid var(--axis); background: none; border-radius: 6px; padding: 3px 9px; cursor: pointer; color: var(--ink-2); font-size: 13px; }
+.load-btn:hover { color: var(--ink); border-color: var(--ink-2); }
+.obsv { white-space: nowrap; font-weight: 500; }
+.obsv small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }
+.dim { color: var(--muted); }
+.pending { color: var(--muted); }
+.stale { opacity: .55; }
+
+/* Detail panel */
+.board > tbody > tr.detail > td { padding: 0; border-top: 0; background: var(--accent-wash); }
+.detail-inner { padding: 6px 14px 18px 46px; display: grid; grid-template-columns: minmax(260px, 1.4fr) minmax(150px, .7fr) minmax(200px, .9fr); gap: 18px 28px; }
+.panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 12px 14px; min-width: 0; }
+.panel h3 { margin: 0 0 2px; font-size: 15px; font-weight: 600; }
+.panel .sub { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+.panel.wide { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px 28px; }
+.bars { display: grid; grid-template-columns: max-content minmax(60px, 1fr) 46px; gap: 4px 10px; align-items: center; }
+.bars .lab { font-size: 14px; }
+.bars .lab.top { font-weight: 600; }
+.bars .track { height: 14px; position: relative; }
+.bars .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent-soft); border-radius: 0 4px 4px 0; min-width: 2px; }
+.bars .fill.top { background: var(--accent); }
+.bars .pct { text-align: right; font-size: 14px; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 10px; font-size: 12px; color: var(--muted); }
+.legend i { display: inline-block; width: 12px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.parity { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 13px; color: var(--ink-2); flex-wrap: wrap; }
+.parity .seg button { padding: 3px 9px; min-height: 28px; font-size: 13px; }
+.note { font-size: 13px; color: var(--ink-2); margin: 10px 0 0; }
+table.mini { border-collapse: collapse; width: 100%; font-size: 14px; }
+table.mini th, table.mini td { padding: 3px 0; border-bottom: 1px solid var(--rule); text-align: left; font-weight: 400; }
+table.mini td.num, table.mini th.num { text-align: right; }
+table.mini tr:last-child td, table.mini tr:last-child th { border-bottom: 0; }
+table.mini tr.total td, table.mini tr.total th { font-weight: 600; border-top: 1px solid var(--axis); }
+dl.facts { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: 14px; }
+dl.facts dt { color: var(--muted); }
+dl.facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+code.metar { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 12px; color: var(--ink-2); overflow-wrap: anywhere; }
+.flag { display: flex; gap: 8px; align-items: flex-start; margin-top: 10px; font-size: 13px; color: var(--ink); }
+.flag svg { flex: none; width: 16px; height: 16px; margin-top: 1px; color: var(--warn); }
+.flag b { font-weight: 600; color: var(--warn-ink); }
+.err { color: var(--warn-ink); font-size: 14px; }
+.retry { margin-left: 8px; }
+
+/* Footer: method and limits, kept short */
+footer { padding-top: 26px; padding-bottom: 40px; color: var(--ink-2); font-size: 14px; }
+footer .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 8px 36px; }
+footer h2 { font-size: 15px; font-weight: 600; color: var(--ink); margin: 0 0 6px; }
+footer p, footer ul { margin: 0 0 10px; max-width: 70ch; }
+footer ul { padding-left: 18px; }
+footer li { margin-bottom: 4px; }
+footer .legal { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--rule); color: var(--muted); font-size: 13px; }
+
+.empty { padding: 26px 16px; text-align: center; color: var(--ink-2); }
+
+@media (max-width: 1020px) {
+  .detail-inner { grid-template-columns: 1fr 1fr; padding-left: 14px; }
+  .detail-inner .panel.buckets { grid-column: 1 / -1; }
+  .c-spread .range { display: none; }
+}
+@media (max-width: 760px) {
+  .masthead { grid-template-columns: 1fr; padding-top: 20px; }
+  .masthead .disclaimer { text-align: left; max-width: none; }
+  .search { flex: 1 1 100%; }
+  .search input { width: 100%; }
+  table.board, .board > tbody { display: block; }
+  .board > thead { display: none; }
+  .board > tbody > tr.row { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; grid-template-areas: "pin city cons" "pin mkt spread" "pin top obs"; gap: 2px 10px; padding: 10px 10px 10px 4px; border-top: 1px solid var(--rule); }
+  .board > tbody > tr.row:first-child { border-top: 0; }
+  .board > tbody > tr.row > td { display: block; padding: 0; border: 0; background: none; }
+  .board > tbody > tr.row.is-open > td { background: none; }
+  .board > tbody > tr.row.is-open { background: var(--accent-wash); }
+  .board > tbody > tr.row > td.c-pin { grid-area: pin; width: auto; }
+  .board > tbody > tr.row > td.c-city { grid-area: city; }
+  .board > tbody > tr.row > td.c-mkt { grid-area: mkt; align-self: center; }
+  .board > tbody > tr.row > td.c-cons { grid-area: cons; text-align: right; }
+  .board > tbody > tr.row > td.c-spread { grid-area: spread; justify-self: end; }
+  .board > tbody > tr.row > td.c-top { grid-area: top; align-self: center; font-size: 14px; }
+  .board > tbody > tr.row > td.c-obs { grid-area: obs; text-align: right; }
+  .board > tbody > tr.detail, .board > tbody > tr.detail > td { display: block; }
+  .detail-inner { grid-template-columns: 1fr; padding: 4px 10px 14px; }
+  .bars { grid-template-columns: max-content minmax(40px, 1fr) 42px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .expander .chev { transition: none; }
+}
+@media (forced-colors: active) {
+  .bars .fill { background: CanvasText; }
+  .bars .fill.top { background: Highlight; }
+}
+</style>
+</head>
+<body>
+<header class="masthead wrap">
+  <div>
+    <h1>TempRadar</h1>
+    <p>Tomorrow’s high, station by station: model consensus, ensemble bucket chances and today’s measured maximum for the weather stations that Polymarket and Kalshi temperature markets settle on.</p>
+  </div>
+  <p class="disclaimer">Data only. No trading advice, no promise of profit. Not affiliated with Polymarket or Kalshi.</p>
+</header>
+
+<nav class="filters wrap" aria-label="Filters">
+  <div class="seg" role="group" aria-label="Forecast day" id="day-seg">
+    <button type="button" data-day="0">Today</button>
+    <button type="button" data-day="1">Tomorrow</button>
+    <button type="button" data-day="2">Day after</button>
+  </div>
+  <div class="seg" role="group" aria-label="Market" id="mkt-seg">
+    <button type="button" data-mkt="all">All markets</button>
+    <button type="button" data-mkt="polymarket">Polymarket</button>
+    <button type="button" data-mkt="kalshi">Kalshi</button>
+  </div>
+  <label class="search"><span class="sr-only">Find a station</span><input id="q" type="search" placeholder="Find a city or ICAO code" autocomplete="off" spellcheck="false"></label>
+</nav>
+
+<main class="wrap">
+  <p id="status" class="status" aria-live="polite"></p>
+  <table class="board" id="board">
+    <caption class="sr-only">Daily high temperature forecasts per settlement station. Open a row for bucket chances, model values and observations.</caption>
+    <thead>
+      <tr>
+        <th scope="col" class="c-pin"><span class="sr-only">Pinned</span></th>
+        <th scope="col" class="c-city">Station</th>
+        <th scope="col" class="c-mkt">Market</th>
+        <th scope="col" class="c-cons num">Consensus</th>
+        <th scope="col" class="c-spread">Model spread</th>
+        <th scope="col" class="c-top">Most likely bucket</th>
+        <th scope="col" class="c-obs num">Today so far</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <div id="empty" class="empty" hidden></div>
+</main>
+
+<footer class="wrap">
+  <div class="cols">
+    <section>
+      <h2>How the numbers are made</h2>
+      <ul>
+        <li><strong>Consensus</strong> is the average daily high of up to nine weather models (ECMWF IFS and AIFS, GFS, ICON, GEM, UK Met Office, Météo-France, JMA, and NBM for US stations) for the station’s local calendar day, at the station’s coordinates and elevation.</li>
+        <li><strong>Bucket chances</strong> come from 161 ensemble members (ECMWF 51, GEFS 31, ICON 40, GEM 21, MOGREPS-G 18). Each member’s daily high is rounded to a whole degree, halves up, and counts once. Fahrenheit buckets are two degrees wide and start on an even number (80–81); Celsius buckets are one degree.</li>
+        <li><strong>Today so far</strong> (US stations) is read from api.weather.gov. Following the Polymarket rule, only routine METARs count, using the T-group in tenths of a degree Celsius, converted and rounded halves up. On the Today view, members below the measured high are counted at the measured high.</li>
+      </ul>
+    </section>
+    <section>
+      <h2>Limits</h2>
+      <ul>
+        <li>A model grid cell is not the airport thermometer. Coastal, lake-side and mountain stations can be several degrees off.</li>
+        <li>Ensemble daily highs are built from hourly or three-hourly values and tend to miss short peaks. The spread is raw, not calibrated.</li>
+        <li>Kalshi lists The Weather Company as its source and its bucket edges move from day to day; use the bucket-start switch in a Kalshi row to match the day’s listing.</li>
+        <li>Stations were checked against the open markets on <span id="verified"></span>. Rules change, so read the rules of the market you trade.</li>
+      </ul>
+    </section>
+  </div>
+  <p>Tomorrow’s consensus and top three buckets for eight cities are posted every day at 12:15 UTC on Telegram: <a href="https://t.me/tempradar_wx">t.me/tempradar_wx</a>.</p>
+  <p class="legal">Weather data by <a href="https://open-meteo.com/">Open-Meteo.com</a> (CC BY 4.0). Observations from the US <a href="https://www.weather.gov/documentation/services-web-api">National Weather Service</a>. TempRadar is independent and not affiliated with Polymarket, Kalshi or any weather agency.</p>
+</footer>
+
+<script src="stations.js"></script>
+<script src="calc.js"></script>
+<script>
+(function () {
+  "use strict";
+  var D = window.TEMPRADAR, C = window.TRCalc;
+  var STATIONS = D.stations;
+  var byId = {};
+  STATIONS.forEach(function (s) { byId[s.id] = s; });
+
+  // ---- Per-viewer conveniences (safe if storage is blocked) -----------------
+  var store = {
+    get: function (k, d) { try { var v = localStorage.getItem("tempradar." + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+    set: function (k, v) { try { localStorage.setItem("tempradar." + k, JSON.stringify(v)); } catch (e) { /* ignore */ } }
+  };
+  var state = {
+    day: store.get("day", 1),
+    market: store.get("market", "all"),
+    q: "",
+    pins: new Set(store.get("pins", STATIONS.filter(function (s) { return s.telegram; }).map(function (s) { return s.id; }))),
+    parity: store.get("parity", {}),
+    open: new Set()
+  };
+  if ([0, 1, 2].indexOf(state.day) < 0) state.day = 1;
+  if (["all", "polymarket", "kalshi"].indexOf(state.market) < 0) state.market = "all";
+
+  var det = {};   // id -> {dates, models: {modelId: [..]}}
+  var ens = {};   // id -> {status, data, error}
+  var obs = {};   // id -> {status, data, error, t}
+  var detError = null, detLoadedAt = null;
+
+  // ---- Fetch helpers ------------------------------------------------------
+  function queue(limit) {
+    var active = 0, q = [];
+    function next() {
+      if (active >= limit || !q.length) return;
+      active++;
+      var job = q.shift();
+      job.fn().then(job.res, job.rej).then(function () { active--; next(); });
+    }
+    return function (fn) { return new Promise(function (res, rej) { q.push({ fn: fn, res: res, rej: rej }); next(); }); };
+  }
+  var omQueue = queue(2), nwsQueue = queue(4);
+
+  function cacheGet(url, ttlMin) {
+    try {
+      var c = JSON.parse(localStorage.getItem("tempradar.cache." + url));
+      if (c && Date.now() - c.t < ttlMin * 60000) return c;
+    } catch (e) { /* ignore */ }
+    return null;
+  }
+  function cachePut(url, data) {
+    var entry = JSON.stringify({ t: Date.now(), d: data });
+    try { localStorage.setItem("tempradar.cache." + url, entry); }
+    catch (e) {
+      try { // storage full: drop old cache entries and try once more
+        Object.keys(localStorage).forEach(function (k) { if (k.indexOf("tempradar.cache.") === 0) localStorage.removeItem(k); });
+        localStorage.setItem("tempradar.cache." + url, entry);
+      } catch (e2) { /* ignore */ }
+    }
+  }
+  function getJSON(url, opts) {
+    opts = opts || {};
+    if (opts.ttl) {
+      var hit = cacheGet(url, opts.ttl);
+      if (hit) return Promise.resolve(hit.d);
+    }
+    return fetch(url, { headers: opts.headers || {} }).then(function (r) {
+      return r.text().then(function (txt) {
+        var body = null;
+        try { body = JSON.parse(txt); } catch (e) { /* not JSON */ }
+        if (!r.ok) {
+          var msg = (body && (body.reason || body.detail || body.title)) || ("HTTP " + r.status);
+          var err = new Error(msg); err.status = r.status; throw err;
+        }
+        if (opts.ttl) cachePut(url, body);
+        return body;
+      });
+    });
+  }
+  function explain(err, source) {
+    if (err && err.status === 429) return source + " rate limit reached for your connection. Wait a minute, then reload.";
+    if (err && err.status >= 500) return source + " is not responding right now (" + err.status + "). Try again in a few minutes.";
+    if (err && err.message === "Failed to fetch") return "Could not reach " + source + ". Check your connection, then reload.";
+    return source + ": " + (err && err.message ? err.message : "unknown error");
+  }
+
+  var OM = "https://api.open-meteo.com/v1/forecast";
+  var OM_ENS = "https://ensemble-api.open-meteo.com/v1/ensemble";
+
+  function detModelsFor(s) {
+    return D.deterministicModels.filter(function (m) { return !m.usOnly || s.country === "US"; });
+  }
+  function detUrl(list, unit) {
+    var models = D.deterministicModels.filter(function (m) { return !m.usOnly || list.some(function (s) { return s.country === "US"; }); });
+    return OM + "?latitude=" + list.map(function (s) { return s.lat; }).join(",") +
+      "&longitude=" + list.map(function (s) { return s.lon; }).join(",") +
+      "&elevation=" + list.map(function (s) { return s.elev === null || s.elev === undefined ? "nan" : s.elev; }).join(",") +
+      "&timezone=" + list.map(function (s) { return encodeURIComponent(s.tz); }).join(",") +
+      "&daily=temperature_2m_max&forecast_days=" + D.forecastDays +
+      "&models=" + models.map(function (m) { return m.id; }).join(",") +
+      (unit === "F" ? "&temperature_unit=fahrenheit" : "");
+  }
+  function ensUrl(s) {
+    return OM_ENS + "?latitude=" + s.lat + "&longitude=" + s.lon +
+      "&elevation=" + (s.elev === null || s.elev === undefined ? "nan" : s.elev) +
+      "&timezone=" + encodeURIComponent(s.tz) +
+      "&daily=temperature_2m_max&forecast_days=" + D.forecastDays +
+      "&models=" + D.ensembleModels.map(function (m) { return m.id; }).join(",") +
+      (s.unit === "F" ? "&temperature_unit=fahrenheit" : "");
+  }
+
+  function loadDeterministic() {
+    var groups = { F: [], C: [] };
+    STATIONS.forEach(function (s) { groups[s.unit].push(s); });
+    var jobs = [];
+    Object.keys(groups).forEach(function (unit) {
+      var list = groups[unit];
+      for (var i = 0; i < list.length; i += 40) {
+        (function (chunk) {
+          jobs.push(getJSON(detUrl(chunk, unit), { ttl: 30 }).then(function (j) {
+            var arr = Array.isArray(j) ? j : [j];
+            arr.forEach(function (loc, k) {
+              var s = chunk[k], models = {};
+              D.deterministicModels.forEach(function (m) {
+                var v = loc.daily && loc.daily["temperature_2m_max_" + m.id];
+                if (v) models[m.id] = v;
+              });
+              det[s.id] = { dates: (loc.daily && loc.daily.time) || [], models: models };
+            });
+          }));
+        })(list.slice(i, i + 40));
+      }
+    });
+    return Promise.all(jobs).then(function () {
+      detError = null; detLoadedAt = new Date();
+    }, function (err) { detError = explain(err, "Open-Meteo"); });
+  }
+
+  function loadEnsemble(id) {
+    var s = byId[id];
+    if (ens[id] && (ens[id].status === "loading" || ens[id].status === "ok")) return;
+    ens[id] = { status: "loading" };
+    renderRow(id);
+    omQueue(function () { return getJSON(ensUrl(s), { ttl: 60 }); }).then(function (j) {
+      ens[id] = { status: "ok", data: C.parseEnsemble(j, D.ensembleModels) };
+    }, function (err) {
+      ens[id] = { status: "error", error: explain(err, "Open-Meteo ensemble") };
+    }).then(function () { renderRow(id); });
+  }
+
+  function obsWindow(s, market) {
+    var today = C.localDate(s.tz, 0);
+    var tomorrow = C.localDate(s.tz, 1);
+    var lst = market === "kalshi";
+    return { date: today, start: C.localMidnightUTC(today, s.tz, lst), end: C.localMidnightUTC(tomorrow, s.tz, lst) };
+  }
+  // Polymarket rule when the station has a Polymarket market, otherwise the NWS climate day.
+  function obsRule(s) { return s.polymarket ? "polymarket" : "kalshi"; }
+
+  function loadObs(id) {
+    var s = byId[id];
+    if (!s.obs || !s.icao) return;
+    var o = obs[id];
+    if (o && (o.status === "loading" || (o.status === "ok" && Date.now() - o.t < 5 * 60000))) return;
+    obs[id] = { status: "loading", data: o && o.data, t: o && o.t };
+    var w = obsWindow(s, obsRule(s));
+    var url = "https://api.weather.gov/stations/" + s.icao + "/observations?start=" + new Date(w.start).toISOString().replace(/\.\d{3}Z$/, "Z");
+    nwsQueue(function () { return getJSON(url, { headers: { Accept: "application/geo+json" } }); }).then(function (j) {
+      obs[id] = { status: "ok", t: Date.now(), window: w, data: C.summarizeNwsObservations(j.features, w.start, w.end) };
+    }, function (err) {
+      obs[id] = { status: "error", t: Date.now(), error: explain(err, "api.weather.gov") };
+    }).then(function () { renderRow(id); });
+  }
+
+  // ---- Derived values -------------------------------------------------------
+  function targetDate(s) { return C.localDate(s.tz, state.day); }
+
+  function consensusFor(s) {
+    var d = det[s.id];
+    if (!d) return null;
+    var i = d.dates.indexOf(targetDate(s));
+    if (i < 0) return null;
+    var models = detModelsFor(s).map(function (m) {
+      var arr = d.models[m.id];
+      return { id: m.id, label: m.label, v: arr ? arr[i] : null };
+    });
+    var c = C.consensus(models.map(function (m) { return m.v; }));
+    return c ? { c: c, models: models } : null;
+  }
+
+  // Observed maximum so far, in the station's unit, used as the floor on the Today view.
+  function observedFloor(s) {
+    var o = obs[s.id];
+    if (!o || o.status !== "ok" || !o.data) return null;
+    var c = o.data.metarMax ? o.data.metarMax.c : null;
+    if (obsRule(s) === "kalshi" && o.data.sixHourMax && (c === null || o.data.sixHourMax.c > c)) c = o.data.sixHourMax.c;
+    if (c === null) return null;
+    return s.unit === "F" ? C.cToF(c) : c;
+  }
+
+  function parityFor(s) { return (s.kalshi && s.unit === "F" && state.parity[s.id] === "odd") ? "odd" : "even"; }
+
+  function bucketsFor(s) {
+    var e = ens[s.id];
+    if (!e || e.status !== "ok") return null;
+    var mem = C.membersForDate(e.data, targetDate(s));
+    if (!mem.length) return { n: 0, buckets: [], top: [], members: mem };
+    var floor = state.day === 0 ? observedFloor(s) : null;
+    var values = mem.map(function (m) { return m.value; });
+    var probs = C.bucketProbs(values, D.bucketWidth[s.unit], parityFor(s), s.unit, floor);
+    probs.top = C.topBuckets(probs, 3);
+    probs.members = mem;
+    probs.values = values;
+    probs.floor = floor;
+    return probs;
+  }
+
+  // ---- Formatting -------------------------------------------------------------
+  function minus(str) { return String(str).replace(/^-/, "−"); }
+  function f1(v) { return minus(v.toFixed(1)); }
+  function pct(p) {
+    if (p > 0 && p < 0.005) return "<1%";
+    if (p < 1 && p > 0.995) return ">99%";
+    return Math.round(p * 100) + "%";
+  }
+  function timeAt(ms, tz) {
+    return new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit" }).format(new Date(ms));
+  }
+  function dayName(date) {
+    var d = new Date(date + "T12:00:00Z");
+    return new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", weekday: "short", day: "numeric", month: "short" }).format(d);
+  }
+  function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+
+  var ICON_PIN = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.2l2.35 4.9 5.35.7-3.9 3.7 1 5.3L10 14.2l-4.8 2.6 1-5.3-3.9-3.7 5.35-.7z" fill="currentColor" fill-opacity="VAR" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>';
+  var ICON_WARN = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5l7 12.5H1z" fill="currentColor"/><path d="M8 6v4M8 11.6v.6" stroke="#14222c" stroke-width="1.6" stroke-linecap="round"/></svg>';
+
+  // Model spread: a fixed window around the consensus (12 °F or 7 °C wide), so rows compare.
+  function spreadSvg(s, cons) {
+    var W = 112, H = 20, span = s.unit === "F" ? 12 : 7, lo = cons.c.mean - span / 2;
+    function x(v) { return Math.max(4, Math.min(W - 4, (v - lo) / span * W)); }
+    var dots = cons.models.filter(function (m) { return m.v !== null && m.v !== undefined; }).map(function (m) {
+      return '<circle cx="' + x(m.v).toFixed(1) + '" cy="10" r="4" fill="var(--ink-2)" stroke="var(--surface)" stroke-width="2"><title>' + esc(m.label) + " " + f1(m.v) + "°" + s.unit + "</title></circle>";
+    }).join("");
+    return '<svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + " " + H + '" aria-hidden="true">' +
+      '<line x1="0" x2="' + W + '" y1="10" y2="10" stroke="var(--axis)" stroke-width="1"/>' +
+      '<line x1="' + x(cons.c.mean).toFixed(1) + '" x2="' + x(cons.c.mean).toFixed(1) + '" y1="1" y2="19" stroke="var(--accent)" stroke-width="2"/>' +
+      dots + "</svg>";
+  }
+
+  // ---- Rows -------------------------------------------------------------------
+  var rowsEl = document.getElementById("rows");
+  var rowEls = {};
+
+  function buildRows() {
+    STATIONS.forEach(function (s) {
+      var tr = document.createElement("tr");
+      tr.className = "row";
+      tr.id = "row-" + s.id;
+      var mk = [];
+      if (s.polymarket) mk.push('<span class="chip">Polymarket</span>');
+      if (s.kalshi) mk.push('<span class="chip">Kalshi</span>');
+      tr.innerHTML =
+        '<td class="c-pin"><button type="button" class="pin" aria-pressed="false" aria-label="Pin ' + esc(s.city + ", " + s.place) + '"></button></td>' +
+        '<td class="c-city"><button type="button" class="expander" aria-expanded="false" aria-controls="detail-' + s.id + '">' +
+          '<span class="city">' + esc(s.city) + '</span><span class="chev" aria-hidden="true">›</span>' +
+          '<span class="place">' + esc(s.place) + (s.icao ? ' <span class="icao">' + s.icao + "</span>" : "") + "</span></button></td>" +
+        '<td class="c-mkt"><div class="mkt">' + mk.join("") + "</div></td>" +
+        '<td class="c-cons num"></td><td class="c-spread"></td><td class="c-top"></td><td class="c-obs num"></td>';
+      var dtr = document.createElement("tr");
+      dtr.className = "detail";
+      dtr.id = "detail-" + s.id;
+      dtr.hidden = true;
+      dtr.innerHTML = '<td colspan="7"><div class="detail-inner"></div></td>';
+      tr.querySelector(".pin").addEventListener("click", function () { togglePin(s.id); });
+      tr.querySelector(".expander").addEventListener("click", function () { toggleOpen(s.id); });
+      rowEls[s.id] = { tr: tr, dtr: dtr };
+    });
+    orderRows();
+  }
+
+  function sortedStations() {
+    return STATIONS.slice().sort(function (a, b) {
+      var pa = state.pins.has(a.id) ? 0 : 1, pb = state.pins.has(b.id) ? 0 : 1;
+      return pa - pb || a.city.localeCompare(b.city) || (a.polymarket ? -1 : 1);
+    });
+  }
+  function orderRows() {
+    var frag = document.createDocumentFragment();
+    sortedStations().forEach(function (s) { frag.appendChild(rowEls[s.id].tr); frag.appendChild(rowEls[s.id].dtr); });
+    rowsEl.appendChild(frag);
+  }
+
+  function matches(s) {
+    if (state.market === "polymarket" && !s.polymarket) return false;
+    if (state.market === "kalshi" && !s.kalshi) return false;
+    if (!state.q) return true;
+    var hay = [s.city, s.place, s.icao || "", s.polymarket ? s.polymarket.city : "", s.kalshi ? s.kalshi.series + " " + s.kalshi.cli : "", s.country].join(" ").toLowerCase();
+    return state.q.toLowerCase().split(/\s+/).every(function (w) { return hay.indexOf(w) >= 0; });
+  }
+
+  function renderRow(id) {
+    var s = byId[id], el = rowEls[id], tr = el.tr;
+    var visible = matches(s);
+    tr.hidden = !visible;
+    el.dtr.hidden = !visible || !state.open.has(id);
+    var pinned = state.pins.has(id);
+    var pinBtn = tr.querySelector(".pin");
+    pinBtn.setAttribute("aria-pressed", pinned ? "true" : "false");
+    pinBtn.innerHTML = ICON_PIN.replace("VAR", pinned ? "1" : "0");
+    tr.classList.toggle("is-open", state.open.has(id));
+    tr.querySelector(".expander").setAttribute("aria-expanded", state.open.has(id) ? "true" : "false");
+
+    var consCell = tr.querySelector(".c-cons"), spreadCell = tr.querySelector(".c-spread");
+    var cons = consensusFor(s);
+    if (cons) {
+      consCell.innerHTML = '<span class="cons">' + f1(cons.c.mean) + '<span class="u">°' + s.unit + "</span></span>";
+      spreadCell.innerHTML = '<div class="spread">' + spreadSvg(s, cons) + '<span class="range">' + minus(Math.round(cons.c.min)) + "–" + minus(Math.round(cons.c.max)) + '</span><span class="sr-only">' + cons.c.n + " models from " + f1(cons.c.min) + " to " + f1(cons.c.max) + " degrees</span></div>";
+    } else {
+      consCell.innerHTML = '<span class="pending">' + (detError ? "no data" : "…") + "</span>";
+      spreadCell.innerHTML = "";
+    }
+
+    var topCell = tr.querySelector(".c-top"), e = ens[id];
+    if (!e) {
+      topCell.innerHTML = '<button type="button" class="load-btn">Show chances</button>';
+      topCell.querySelector("button").addEventListener("click", function () { loadEnsemble(id); });
+    } else if (e.status === "loading") {
+      topCell.innerHTML = '<span class="pending">Loading ensemble…</span>';
+    } else if (e.status === "error") {
+      topCell.innerHTML = '<span class="err">Not loaded</span> <button type="button" class="load-btn retry">Retry</button>';
+      topCell.querySelector("button").addEventListener("click", function () { delete ens[id]; loadEnsemble(id); });
+    } else {
+      var b = bucketsFor(s);
+      topCell.innerHTML = b && b.top.length
+        ? '<span class="top1"><b>' + b.top[0].label + '</b><span class="p">' + pct(b.top[0].p) + "</span></span>"
+        : '<span class="dim">No members for this day</span>';
+    }
+
+    var obsCell = tr.querySelector(".c-obs");
+    if (!s.obs || !s.icao) {
+      obsCell.innerHTML = '<span class="dim" title="Measured highs are shown for US stations only">–</span><span class="sr-only">Not available outside the US</span>';
+    } else {
+      var o = obs[id];
+      if (!o || (o.status === "loading" && !o.data)) obsCell.innerHTML = '<span class="pending">…</span>';
+      else if (o.status === "error") obsCell.innerHTML = '<span class="err" title="' + esc(o.error) + '">n/a</span>';
+      else if (o.data && o.data.metarMax) {
+        var m = o.data.metarMax, val = s.unit === "F" ? C.roundHalfUp(C.cToF(m.c)) : C.roundHalfUp(m.c);
+        obsCell.innerHTML = '<span class="obsv">' + minus(val) + "°" + s.unit + "<small>at " + timeAt(m.time, s.tz) + "</small></span>";
+      } else obsCell.innerHTML = '<span class="dim">No METAR yet</span>';
+    }
+
+    if (state.open.has(id) && visible) renderDetail(s);
+  }
+
+  function renderAll() {
+    var shown = 0;
+    STATIONS.forEach(function (s) { renderRow(s.id); if (matches(s)) shown++; });
+    var empty = document.getElementById("empty");
+    document.getElementById("board").hidden = shown === 0;
+    empty.hidden = shown !== 0;
+    if (!shown) empty.innerHTML = "No station matches “" + esc(state.q) + "”" + (state.market !== "all" ? " in this market" : "") + '. <button type="button" class="load-btn" id="clear">Clear filters</button>';
+    var cl = document.getElementById("clear");
+    if (cl) cl.addEventListener("click", function () { state.q = ""; state.market = "all"; document.getElementById("q").value = ""; syncControls(); renderAll(); });
+    renderStatus(shown);
+  }
+
+  function renderStatus(shown) {
+    var el = document.getElementById("status");
+    if (detError) { el.className = "status error"; el.textContent = detError; return; }
+    el.className = "status";
+    var label = ["Today", "Tomorrow", "Day after tomorrow"][state.day];
+    var ref = byId["klga"] || STATIONS[0];
+    var txt = label + "’s high in each station’s local time (" + dayName(C.localDate(ref.tz, state.day)) + " in New York). " +
+      shown + " of " + STATIONS.length + " stations.";
+    if (detLoadedAt) txt += " Models loaded " + detLoadedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) + ".";
+    else txt += " Loading models…";
+    el.textContent = txt;
+  }
+
+  // ---- Detail panel -------------------------------------------------------------
+  function renderDetail(s) {
+    var box = rowEls[s.id].dtr.querySelector(".detail-inner");
+    var html = "";
+    var unit = "°" + s.unit;
+
+    // Buckets
+    var e = ens[s.id];
+    html += '<section class="panel buckets"><h3>Chance of each bucket</h3>';
+    if (!e || e.status === "loading") html += '<p class="sub">Loading 161 ensemble members…</p></section>';
+    else if (e.status === "error") html += '<p class="err">' + esc(e.error) + ' <button type="button" class="load-btn retry" data-retry="1">Retry</button></p></section>';
+    else {
+      var b = bucketsFor(s);
+      var perModel = {};
+      b.members.forEach(function (m) { perModel[m.model] = (perModel[m.model] || 0) + 1; });
+      html += '<p class="sub">' + b.n + " ensemble members, each counted once, " + (D.bucketWidth[s.unit] === 2 ? "two-degree" : "one-degree") + " buckets.</p>";
+      if (s.kalshi && s.unit === "F") {
+        var par = parityFor(s);
+        html += '<div class="parity"><span>Bucket start</span><div class="seg" role="group" aria-label="Bucket start">' +
+          '<button type="button" data-parity="even" aria-pressed="' + (par === "even") + '">Even (80–81)</button>' +
+          '<button type="button" data-parity="odd" aria-pressed="' + (par === "odd") + '">Odd (79–80)</button></div>' +
+          '<span class="dim">' + (s.polymarket ? "Polymarket uses even. " : "") + "Kalshi shifts its edges daily; match the listing.</span></div>";
+      }
+      if (!b.buckets.length) html += '<p class="sub">No ensemble values for this date.</p>';
+      else {
+        var maxP = Math.max.apply(null, b.buckets.map(function (x) { return x.p; }));
+        var topSet = {};
+        b.top.forEach(function (t) { topSet[t.start] = true; });
+        html += '<div class="bars" role="table" aria-label="Bucket chances">';
+        b.buckets.slice().reverse().forEach(function (x) {
+          var isTop = !!topSet[x.start];
+          html += '<div class="lab' + (isTop ? " top" : "") + '" role="cell">' + x.label + "</div>" +
+            '<div class="track" role="presentation"><div class="fill' + (isTop ? " top" : "") + '" style="width:' + (x.p / maxP * 100).toFixed(1) + '%"></div></div>' +
+            '<div class="pct" role="cell">' + pct(x.p) + "</div>";
+        });
+        html += "</div>";
+        html += '<div class="legend"><span><i style="background:var(--accent)"></i>Three most likely (bold)</span><span><i style="background:var(--accent-soft)"></i>Other buckets</span></div>';
+        if (b.floor !== null && b.floor !== undefined) {
+          html += '<p class="note">Members below today’s measured high (' + f1(b.floor) + unit + ") are counted at that value.</p>";
+        }
+      }
+      html += "</section>";
+
+      // Chance at or above
+      var cum = C.chanceAtOrAbove(b.values || [], b.floor);
+      html += '<section class="panel"><h3>High at or above</h3><p class="sub">Share of members, whole degrees.</p>';
+      var rows = cum.filter(function (r) { return r.p > 0.004 && r.p < 0.996; });
+      if (rows.length) {
+        html += '<table class="mini"><thead><tr><th scope="col">At least</th><th scope="col" class="num">Chance</th></tr></thead><tbody>';
+        rows.forEach(function (r) { html += "<tr><td>" + minus(r.x) + unit + '</td><td class="num">' + pct(r.p) + "</td></tr>"; });
+        html += "</tbody></table>";
+      } else html += '<p class="sub">All members agree on one value.</p>';
+      html += "</section>";
+    }
+    if (!e || e.status !== "ok") html += '<section class="panel"><h3>High at or above</h3><p class="sub">Shown once the ensemble has loaded.</p></section>';
+
+    // Models
+    var cons = consensusFor(s);
+    html += '<section class="panel"><h3>Models</h3><p class="sub">Daily high, ' + esc(dayName(targetDate(s))) + " local.</p>";
+    if (cons) {
+      html += '<table class="mini"><tbody>';
+      cons.models.slice().sort(function (a, b2) { return (b2.v === null) - (a.v === null) || (b2.v || 0) - (a.v || 0); }).forEach(function (m) {
+        html += "<tr><th scope=\"row\">" + esc(m.label) + '</th><td class="num">' + (m.v === null || m.v === undefined ? '<span class="dim">no data</span>' : f1(m.v) + unit) + "</td></tr>";
+      });
+      html += '<tr class="total"><th scope="row">Consensus (mean of ' + cons.c.n + ')</th><td class="num">' + f1(cons.c.mean) + unit + "</td></tr>";
+      if (e && e.status === "ok") {
+        var bb = bucketsFor(s);
+        if (bb && bb.values && bb.values.length) {
+          var mean = bb.values.reduce(function (a, v) { return a + v; }, 0) / bb.values.length;
+          html += '<tr><th scope="row">Ensemble mean (raw)</th><td class="num">' + f1(mean) + unit + "</td></tr>";
+        }
+      }
+      html += "</tbody></table>";
+    } else html += '<p class="sub">' + (detError ? esc(detError) : "Loading…") + "</p>";
+    html += "</section>";
+
+    // Observations + station facts
+    html += '<section class="panel wide">';
+    html += "<div><h3>Measured today</h3>";
+    if (!s.obs || !s.icao) {
+      html += '<p class="sub">' + (s.polymarket && s.polymarket.source === "hko" ? "This market settles on the Hong Kong Observatory’s own reading, which is not loaded here." : "Live observations are only loaded for US stations (api.weather.gov).") + "</p>";
+    } else {
+      var o = obs[s.id];
+      if (!o || o.status === "loading") html += '<p class="sub">Loading observations…</p>';
+      else if (o.status === "error") html += '<p class="err">' + esc(o.error) + "</p>";
+      else {
+        var d = o.data, rule = obsRule(s);
+        html += '<p class="sub">Since local midnight' + (rule === "kalshi" ? " standard time (NWS climate day)" : "") + ", " + d.count + " reports.</p><dl class=\"facts\">";
+        if (d.metarMax) {
+          var mf = C.cToF(d.metarMax.c);
+          html += "<dt>Highest routine METAR</dt><dd><strong>" + (s.unit === "F" ? minus(C.roundHalfUp(mf)) + "°F" : minus(C.roundHalfUp(d.metarMax.c)) + "°C") + "</strong> from " + f1(d.metarMax.c) + "°C" + (d.metarMax.tenths ? "" : " (whole degrees, no T-group)") + ", " + timeAt(d.metarMax.time, s.tz) + "</dd>";
+          html += '<dt>Report</dt><dd><code class="metar">' + esc(d.metarMax.raw) + "</code></dd>";
+        } else html += "<dt>Highest routine METAR</dt><dd>No routine report yet</dd>";
+        if (d.otherMax && (!d.metarMax || d.otherMax.c > d.metarMax.c)) {
+          html += "<dt>Higher special report</dt><dd>" + f1(d.otherMax.c) + "°C at " + timeAt(d.otherMax.time, s.tz) +
+            ". It was not sent at the routine minute (:" + String(d.routineMinute).padStart(2, "0") + "), so it is probably a SPECI, which Polymarket does not count. Check the raw METARs.</dd>";
+        }
+        if (d.sixHourMax) html += "<dt>Six-hour max group</dt><dd>" + f1(d.sixHourMax.c) + "°C (" + minus(C.roundHalfUp(C.cToF(d.sixHourMax.c))) + "°F), " + timeAt(d.sixHourMax.time, s.tz) + "</dd>";
+        if (d.fiveMinMax) {
+          var c5 = d.fiveMinMax.c, whole = Math.abs(c5 - Math.round(c5)) < 1e-9;
+          html += "<dt>Highest 5-minute</dt><dd>" + (whole ? minus(Math.round(c5)) : f1(c5)) + "°C" +
+            (whole && s.unit === "F" ? ", somewhere between " + f1(C.cToF(c5 - 0.5)) + " and " + f1(C.cToF(c5 + 0.5)) + "°F" : "") + ", " + timeAt(d.fiveMinMax.time, s.tz) + "</dd>";
+        }
+        if (d.latest) html += "<dt>Latest</dt><dd>" + f1(d.latest.c) + "°C at " + timeAt(d.latest.time, s.tz) + "</dd>";
+        html += "</dl>";
+        if (s.polymarket) html += '<p class="note">Polymarket counts routine METARs only (T-group, tenths of °C). Five-minute readings are not part of its rule.</p>';
+        if (s.kalshi) html += '<p class="note">Kalshi settles on the official daily maximum, which can be higher than any hourly METAR.' + (C.isDaylightTime(s.tz, Date.now()) ? " During daylight saving time the NWS climate day runs 1:00 a.m. to 12:59 a.m. local time." : "") + "</p>";
+      }
+    }
+    html += "</div>";
+
+    html += "<div><h3>Station and rules</h3><dl class=\"facts\">";
+    html += "<dt>Station</dt><dd>" + esc(s.place) + (s.icao ? " (" + s.icao + ")" : "") + "</dd>";
+    html += "<dt>Location</dt><dd>" + s.lat.toFixed(3) + ", " + s.lon.toFixed(3) + (s.elev !== null && s.elev !== undefined ? ", " + s.elev + " m" : "") + "</dd>";
+    html += "<dt>Time zone</dt><dd>" + esc(s.tz) + "</dd>";
+    if (s.polymarket) {
+      html += "<dt>Polymarket</dt><dd>" + (s.polymarket.source === "metar"
+        ? 'Routine METARs, ' + s.unit + ' buckets. <a href="https://aviationweather.gov/api/data/metar?ids=' + s.icao + '&amp;format=raw&amp;hours=30" rel="noopener">Raw METARs</a>'
+        : 'Hong Kong Observatory daily maximum. <a href="https://www.weather.gov.hk/en/cis/climat.htm" rel="noopener">HKO climate data</a>') + "</dd>";
+    }
+    if (s.kalshi) {
+      html += '<dt>Kalshi</dt><dd>Series ' + s.kalshi.series + ", NWS code " + s.kalshi.cli + '. <a href="https://kalshi.com/markets/' + s.kalshi.series.toLowerCase() + '" rel="noopener">Market</a>, <a href="https://forecast.weather.gov/product.php?site=NWS&amp;product=CLI&amp;issuedby=' + s.kalshi.cli.slice(3) + '" rel="noopener">NWS climate report</a></dd>';
+    }
+    html += "</dl>";
+    if (s.note) html += '<p class="note">' + esc(s.note) + "</p>";
+    if (s.uncertain) html += '<div class="flag">' + ICON_WARN + "<span><b>Unverified:</b> " + esc(s.uncertain) + "</span></div>";
+    html += "</div></section>";
+
+    box.innerHTML = html;
+    var retry = box.querySelector("[data-retry]");
+    if (retry) retry.addEventListener("click", function () { delete ens[s.id]; loadEnsemble(s.id); });
+    box.querySelectorAll("[data-parity]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        state.parity[s.id] = btn.getAttribute("data-parity");
+        store.set("parity", state.parity);
+        renderRow(s.id);
+        var again = rowEls[s.id].dtr.querySelector('[data-parity="' + state.parity[s.id] + '"]');
+        if (again) again.focus();
+      });
+    });
+  }
+
+  // ---- Interactions -------------------------------------------------------------
+  function togglePin(id) {
+    if (state.pins.has(id)) state.pins.delete(id); else state.pins.add(id);
+    store.set("pins", Array.from(state.pins));
+    orderRows();
+    renderRow(id);
+    rowEls[id].tr.querySelector(".pin").focus();
+    if (state.pins.has(id)) loadEnsemble(id);
+  }
+  function toggleOpen(id) {
+    if (state.open.has(id)) state.open.delete(id);
+    else { state.open.add(id); loadEnsemble(id); loadObs(id); }
+    renderRow(id);
+    try { history.replaceState(null, "", state.open.has(id) ? "#" + id : location.pathname + location.search); } catch (e) { /* ignore */ }
+  }
+  // Deep link: index.html#klga opens that station.
+  function openFromHash() {
+    var id = (location.hash || "").slice(1).toLowerCase();
+    if (!byId[id]) return;
+    if (!state.open.has(id)) { state.open.add(id); loadEnsemble(id); loadObs(id); }
+    if (!matches(byId[id])) { state.q = ""; state.market = "all"; document.getElementById("q").value = ""; syncControls(); }
+    renderAll();
+    rowEls[id].tr.scrollIntoView({ block: "start" });
+  }
+  window.addEventListener("hashchange", openFromHash);
+  function syncControls() {
+    document.querySelectorAll("#day-seg button").forEach(function (b) { b.setAttribute("aria-pressed", String(+b.getAttribute("data-day") === state.day)); });
+    document.querySelectorAll("#mkt-seg button").forEach(function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-mkt") === state.market)); });
+  }
+  document.querySelectorAll("#day-seg button").forEach(function (b) {
+    b.addEventListener("click", function () { state.day = +b.getAttribute("data-day"); store.set("day", state.day); syncControls(); renderAll(); });
+  });
+  document.querySelectorAll("#mkt-seg button").forEach(function (b) {
+    b.addEventListener("click", function () { state.market = b.getAttribute("data-mkt"); store.set("market", state.market); syncControls(); renderAll(); });
+  });
+  var qTimer;
+  document.getElementById("q").addEventListener("input", function (ev) {
+    clearTimeout(qTimer);
+    qTimer = setTimeout(function () { state.q = ev.target.value.trim(); renderAll(); }, 120);
+  });
+
+  // ---- Start ----------------------------------------------------------------
+  document.getElementById("verified").textContent = dayName(D.verified) + " " + D.verified.slice(0, 4);
+  buildRows();
+  syncControls();
+  renderAll();
+  loadDeterministic().then(function () {
+    renderAll();
+    openFromHash();
+    sortedStations().forEach(function (s) { if (state.pins.has(s.id)) loadEnsemble(s.id); });
+    sortedStations().forEach(function (s) { if (s.obs) loadObs(s.id); });
+  });
+  // Refresh observations every 5 minutes while the page is open and visible.
+  setInterval(function () {
+    if (document.visibilityState !== "visible") return;
+    STATIONS.forEach(function (s) { if (s.obs) loadObs(s.id); });
+  }, 5 * 60000);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,35 @@
+name: Daily Telegram post
+
+on:
+  schedule:
+    # Every day at 12:15 UTC. At that time all default stations (Americas, Europe, Seoul)
+    # are on the same local date, so "tomorrow" is the same day everywhere.
+    # GitHub may start scheduled runs a few minutes late.
+    - cron: "15 12 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only print the message in the log, do not send it"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: telegram-post
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build and send the post
+        run: python3 scripts/post_telegram.py
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SITE_URL: ${{ vars.SITE_URL || 'https://klevi2.github.io/tempradar/' }}
+          DRY_RUN: ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '1' || '0' }}
