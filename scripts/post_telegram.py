@@ -41,17 +41,39 @@ def load_config():
     return json.loads(m.group(1))
 
 
-def http_json(url, attempts=3):
+def annotate(level, message):
+    """Print a GitHub Actions annotation (shown on the run page) or a plain line elsewhere."""
+    message = message.replace("\n", " ")
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        print(f"::{level}::{message}", flush=True)
+    else:
+        print(f"{level}: {message}", file=sys.stderr, flush=True)
+
+
+def http_json(url, attempts=4):
     last = None
     for i in range(attempts):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
             with urllib.request.urlopen(req, timeout=40) as r:
                 return json.loads(r.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            try:
+                reason = json.loads(e.read().decode("utf-8")).get("reason")
+            except Exception:
+                reason = None
+            last = f"HTTP {e.code} {reason or e.reason}"
+            if e.code == 429:
+                # Shared GitHub runner IPs can hit Open-Meteo's per-minute limit; wait it out.
+                time.sleep(65)
+            elif 400 <= e.code < 500:
+                break  # a bad request will not get better by retrying
+            else:
+                time.sleep(10 * (i + 1))
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
-            last = e
-            time.sleep(5 * (i + 1))
-    raise RuntimeError(f"request failed after {attempts} attempts: {last}")
+            last = str(getattr(e, "reason", e))
+            time.sleep(10 * (i + 1))
+    raise RuntimeError(f"{urllib.parse.urlsplit(url).netloc}: {last}")
 
 
 def elev_param(s):
@@ -159,6 +181,8 @@ def send_telegram(token, chat_id, text):
 
 
 def main():
+    dry_run = os.environ.get("DRY_RUN", "").strip() in ("1", "true", "yes")
+    annotate("notice", "Mode: dry run, the message is only printed" if dry_run else "Mode: send to Telegram")
     cfg = load_config()
     stations = [s for s in cfg["stations"] if s.get("telegram")]
     if not stations:
@@ -171,7 +195,7 @@ def main():
             results.append((s, station_summary(s, cfg, date)))
         except Exception as e:  # one station failing should not stop the post
             failures += 1
-            print(f"warning: {s['id']}: {e}", file=sys.stderr)
+            annotate("warning", f"{s['id']}: {e}")
             results.append((s, None))
         time.sleep(1)  # be gentle with the free API
     if failures == len(stations):
@@ -180,7 +204,7 @@ def main():
     date = local_date(stations[0]["tz"], 1, now)
     text = build_message(cfg, results, date, os.environ.get("SITE_URL", "").strip())
 
-    if os.environ.get("DRY_RUN", "").strip() in ("1", "true", "yes"):
+    if dry_run:
         print(text)
         return
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
@@ -188,8 +212,16 @@ def main():
     if not token or not chat_id:
         raise SystemExit("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set (GitHub secrets), or use DRY_RUN=1.")
     send_telegram(token, chat_id, text)
-    print(f"Posted {len(stations) - failures} of {len(stations)} stations for {date}.")
+    annotate("notice", f"Posted {len(stations) - failures} of {len(stations)} stations for {date}.")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit as e:
+        if e.code not in (None, 0):
+            annotate("error", str(e.code))
+        raise
+    except Exception as e:
+        annotate("error", f"{type(e).__name__}: {e}")
+        raise
