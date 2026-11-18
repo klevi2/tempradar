@@ -71,6 +71,10 @@ The token and chat id live only in GitHub Secrets. They are never written to the
 
 GitHub turns off scheduled workflows in a public repository after 60 days without repository activity. If posts stop, re-enable the workflow on the Actions tab or push a commit.
 
+## Visitor statistics
+
+Visits are counted with [GoatCounter](https://www.goatcounter.com/) (site code `tempradarwx`, dashboard at tempradarwx.goatcounter.com). GoatCounter sets no cookies and stores no personal data, so the page needs no cookie banner. Visits from localhost and `file://` are not counted.
+
 ## Run it locally
 
 Open `index.html` in a browser. All data requests go straight to the public APIs. Chrome refuses to load web fonts from `file://`, so the page falls back to the system font there. For the real font, serve the folder over HTTP, for example with `npx serve .`.
