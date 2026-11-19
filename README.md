@@ -70,6 +70,8 @@ Setup:
 
 The token and chat id live only in GitHub Secrets. They are never written to the code or printed in the log.
 
+GitHub starts scheduled runs on a best-effort basis: they can be late, and now and then one is skipped. To send a post outside the schedule, either run the workflow from the Actions tab, or change `.github/post-now` (add a log line) and push it to `main`; only pushes that touch that file trigger a post.
+
 GitHub turns off scheduled workflows in a public repository after 60 days without repository activity. If posts stop, re-enable the workflow on the Actions tab or push a commit.
 
 ## Visitor statistics

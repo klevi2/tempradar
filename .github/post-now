@@ -1,0 +1,3 @@
+# Changing this file and pushing it to main sends one Telegram post right away
+# (see .github/workflows/telegram.yml). Keep a short log line per manual post.
+2026-11-19 14:05 UTC: today's scheduled 12:15 UTC run was not started by GitHub

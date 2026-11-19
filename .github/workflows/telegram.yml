@@ -12,6 +12,11 @@ on:
         description: "Only print the message in the log, do not send it"
         type: boolean
         default: true
+  # Extra post on demand without the GitHub UI: change .github/post-now and push to main.
+  # Pushes that do not touch that file never trigger a post.
+  push:
+    branches: [main]
+    paths: [".github/post-now"]
 
 permissions:
   contents: read
