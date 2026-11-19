@@ -326,3 +326,7 @@ footer li { margin-bottom: 6px; max-width: 70ch; }
   .heat .bar i { background: CanvasText !important; }
   .heat li.top .bar i { background: Highlight !important; }
 }
+
+/* Late measured data ("data to" older than 75 minutes) */
+.late { color: var(--warn-ink); font-weight: 500; }
+.late svg { width: 11px; height: 11px; margin-right: 3px; vertical-align: -1px; color: var(--warn); }

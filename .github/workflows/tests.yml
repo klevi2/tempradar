@@ -15,5 +15,7 @@ jobs:
       - uses: actions/checkout@v5
       - name: JavaScript and Python give identical results
         run: python3 tests/test_parity.py
+      - name: METAR and observation helpers
+        run: node tests/metar_test.js
       - name: Telegram script reads the station list
         run: python3 -c "import sys; sys.path.insert(0, 'scripts'); import post_telegram as p; cfg = p.load_config(); s = [x for x in cfg['stations'] if x.get('telegram')]; assert 6 <= len(s) <= 8, len(s); print('telegram stations:', ', '.join(x['id'] for x in s))"
