@@ -123,7 +123,7 @@
         <ul>
           <li><strong>Consensus</strong> is the average daily high of up to nine weather models (ECMWF IFS and AIFS, GFS, ICON, GEM, UK Met Office, Météo-France, JMA, and NBM for US stations) for the station’s local calendar day, at the station’s coordinates and elevation.</li>
           <li><strong>Bucket probabilities</strong> come from 161 ensemble members (ECMWF 51, GEFS 31, ICON 40, GEM 21, MOGREPS-G 18). Each member’s daily high is rounded to a whole degree, halves up, and counts once. Fahrenheit buckets are two degrees wide and start on an even number (80–81); Celsius buckets are one degree.</li>
-          <li><strong>Measured max today</strong> (US stations) is read from api.weather.gov. Following the Polymarket rule, only routine METARs count, using the T-group in tenths of a degree Celsius, converted and rounded halves up. On the Today view, members below the measured high are counted at the measured high.</li>
+          <li><strong>Measured max today</strong> is the highest routine METAR since local midnight, loaded for the stations on screen from the Iowa Environmental Mesonet (api.weather.gov as fallback for US stations). Following the Polymarket rule, the T-group in tenths of a degree Celsius counts, converted and rounded halves up. “High at” is when that high was reported; “data to” is the newest report, flagged when it is more than 75 minutes old. On the Today view, members below the measured high are counted at the measured high.</li>
         </ul>
       </section>
       <section>
@@ -138,7 +138,7 @@
     </div>
     <div class="legal">
       <div class="badges"><span>Not financial advice</span><span>Not affiliated with Polymarket or Kalshi</span></div>
-      <p>Data sources: weather data by <a href="https://open-meteo.com/">Open-Meteo.com</a> (CC BY 4.0); observations from the US <a href="https://www.weather.gov/documentation/services-web-api">National Weather Service</a> (api.weather.gov). TempRadar is an independent data page and is not affiliated with Polymarket, Kalshi or any weather agency. It gives no trading advice and promises no profit.</p>
+      <p>Data sources: weather data by <a href="https://open-meteo.com/">Open-Meteo.com</a> (CC BY 4.0); METAR observations from the <a href="https://mesonet.agron.iastate.edu/">Iowa Environmental Mesonet</a> of Iowa State University, with the US <a href="https://www.weather.gov/documentation/services-web-api">National Weather Service</a> (api.weather.gov) as fallback. TempRadar is an independent data page and is not affiliated with Polymarket, Kalshi or any weather agency. It gives no trading advice and promises no profit.</p>
     </div>
   </div>
 </footer>
@@ -309,20 +309,164 @@
   // Polymarket rule when the station has a Polymarket market, otherwise the NWS climate day.
   function obsRule(s) { return s.polymarket ? "polymarket" : "kalshi"; }
 
+  // ---- Measured data: Iowa Environmental Mesonet first, api.weather.gov as US fallback ----
+  // IEM allows one request per second per IP and asks for all stations in one request,
+  // so the stations wanted at a given moment (selected + featured) are fetched together.
+  // Results are kept for 5 minutes.
+  var IEM = "https://mesonet.agron.iastate.edu/cgi-bin/request/asos.py";
+  var IEM_Q = "&data=metar&tz=Etc/UTC&format=onlycomma&latlon=no&missing=empty&trace=empty";
+  var OBS_TTL = 5 * 60000, STALE_MS = 75 * 60000;
+  var iem = { pending: new Set(), hfPending: new Set(), timer: null, busy: false, nextAt: 0, backoffUntil: 0 };
+
+  function hasObs(s) { return !!s.icao; }
+  function isoMin(ms) { return new Date(ms).toISOString().slice(0, 16) + "Z"; }
+
+  function finishObs(id) {
+    var s = byId[id], o = obs[id];
+    if (!o || !o.reports) return;
+    var w = obsWindow(s, obsRule(s));
+    o.window = w;
+    o.data = C.summarizeMetarReports(o.reports, w.start, w.end, o.fiveMin || []);
+  }
+  function obsCacheGet(id) {
+    try {
+      var c = JSON.parse(localStorage.getItem("tempradar.obs." + id));
+      if (c && Date.now() - c.t < OBS_TTL && c.date === C.localDate(byId[id].tz, 0)) return c;
+    } catch (e) { /* ignore */ }
+    return null;
+  }
+  function obsCachePut(id) {
+    var o = obs[id];
+    try {
+      localStorage.setItem("tempradar.obs." + id, JSON.stringify({ t: o.t, date: o.date, source: o.source, note: o.note || null, reports: o.reports, fiveMin: o.fiveMin || [], hfT: o.hfT || 0 }));
+    } catch (e) { /* ignore */ }
+  }
+
+  // Measurements for one station; US Kalshi stations also get 5-minute readings.
   function loadObs(id) {
     var s = byId[id];
-    if (!s.obs || !s.icao) return;
+    if (!s || !hasObs(s)) return;
     var o = obs[id];
-    if (o && (o.status === "loading" || (o.status === "ok" && Date.now() - o.t < 5 * 60000))) return;
-    obs[id] = { status: "loading", data: o && o.data, t: o && o.t };
+    if (!o) {
+      var c = obsCacheGet(id);
+      if (c) {
+        obs[id] = o = { status: "ok", t: c.t, date: c.date, source: c.source, note: c.note, reports: c.reports, fiveMin: c.fiveMin, hfT: c.hfT };
+        finishObs(id);
+        scheduleRender();
+      }
+    }
+    var fresh = o && o.status === "ok" && Date.now() - o.t < OBS_TTL;
+    if (!fresh && !(o && o.status === "loading")) {
+      if (!o) obs[id] = { status: "loading" };
+      iem.pending.add(id);
+    }
+    if (s.country === "US" && s.kalshi && !(o && o.hfT && Date.now() - o.hfT < OBS_TTL)) iem.hfPending.add(id);
+    scheduleIem();
+  }
+
+  function scheduleIem() {
+    if (iem.timer || iem.busy || (!iem.pending.size && !iem.hfPending.size)) return;
+    iem.timer = setTimeout(function () { iem.timer = null; runIem(); }, Math.max(150, iem.nextAt - Date.now()));
+  }
+  function runIem() {
+    var job;
+    if (iem.pending.size) {
+      var ids = Array.from(iem.pending);
+      iem.pending.clear();
+      job = fetchRoutine(ids);
+    } else {
+      var id = iem.hfPending.values().next().value;
+      iem.hfPending.delete(id);
+      job = fetchFiveMinute(id);
+    }
+    iem.busy = true;
+    job.then(function () { iem.busy = false; scheduleIem(); });
+  }
+  // IEM counts its one-second throttle from the end of the previous request, so the next
+  // request waits 1.5 s after the last answer.
+  function iemFetch(url) {
+    iem.nextAt = Infinity;
+    function done() { iem.nextAt = Date.now() + 1500; }
+    return fetch(url).then(function (r) {
+      return r.text().then(function (txt) {
+        done();
+        if (!r.ok) { var e = new Error(txt.trim().slice(0, 120) || ("HTTP " + r.status)); e.status = r.status; throw e; }
+        return txt;
+      });
+    }, function (err) { done(); throw err; });
+  }
+
+  // Routine and special METARs (IEM report types 3 and 4) for several stations in one request.
+  function fetchRoutine(ids) {
+    if (Date.now() < iem.backoffUntil) {
+      ids.forEach(function (id) { nwsFallback(id, "Iowa Environmental Mesonet asked for a pause"); });
+      return Promise.resolve();
+    }
+    var wins = ids.map(function (id) { return obsWindow(byId[id], obsRule(byId[id])); });
+    var sts = Math.min.apply(null, wins.map(function (w) { return w.start; }));
+    var url = IEM + "?station=" + ids.map(function (id) { return byId[id].icao; }).join(",") + IEM_Q +
+      "&report_type=3,4&sts=" + isoMin(sts) + "&ets=" + isoMin(Date.now() + 3600000);
+    return iemFetch(url).then(function (txt) {
+      var rows = C.parseIemCsv(txt), now = Date.now();
+      ids.forEach(function (id, k) {
+        var s = byId[id], key = C.iemStationId(s.icao), prev = obs[id] || {};
+        var mine = rows.filter(function (r) { return r.station === key; }).map(function (r) { return { ts: r.ts, raw: r.raw }; });
+        if (!mine.length && s.country === "US" && now - wins[k].start > 2 * 3600000) { nwsFallback(id, "no reports from the Iowa Environmental Mesonet yet today"); return; }
+        obs[id] = { status: "ok", source: "iem", t: now, date: C.localDate(s.tz, 0), reports: mine,
+          fiveMin: prev.source === "iem" ? prev.fiveMin : [], hfT: prev.source === "iem" ? prev.hfT : 0 };
+        finishObs(id);
+        obsCachePut(id);
+      });
+      scheduleRender();
+    }, function (err) {
+      if (err.status === 429 || err.status === 503) iem.backoffUntil = Date.now() + 60000;
+      ids.forEach(function (id) { nwsFallback(id, explain(err, "Iowa Environmental Mesonet")); });
+    });
+  }
+
+  // Five-minute readings (IEM report type 1) for one US station, used for the Kalshi notes.
+  function fetchFiveMinute(id) {
+    var s = byId[id];
+    if (Date.now() < iem.backoffUntil) return Promise.resolve();
+    var w = obsWindow(s, obsRule(s));
+    var url = IEM + "?station=" + s.icao + IEM_Q + "&report_type=1&sts=" + isoMin(w.start) + "&ets=" + isoMin(Date.now() + 3600000);
+    return iemFetch(url).then(function (txt) {
+      var o = obs[id];
+      if (!o || o.source !== "iem") return; // the api.weather.gov fallback already carries 5-minute data
+      o.fiveMin = C.iemFiveMinute(C.parseIemCsv(txt));
+      o.hfT = Date.now();
+      finishObs(id);
+      obsCachePut(id);
+    }, function (err) {
+      if (err.status === 429 || err.status === 503) iem.backoffUntil = Date.now() + 60000;
+      if (obs[id]) obs[id].hfFailed = Date.now();
+    }).then(scheduleRender);
+  }
+
+  function nwsFallback(id, reason) {
+    var s = byId[id], prev = obs[id] || {};
+    if (s.country !== "US") {
+      obs[id] = prev.reports ? Object.assign(prev, { status: "ok", note: reason }) : { status: "error", t: Date.now(), error: reason };
+      scheduleRender();
+      return;
+    }
     var w = obsWindow(s, obsRule(s));
     var url = "https://api.weather.gov/stations/" + s.icao + "/observations?start=" + new Date(w.start).toISOString().replace(/\.\d{3}Z$/, "Z");
     nwsQueue(function () { return getJSON(url, { headers: { Accept: "application/geo+json" } }); }).then(function (j) {
-      obs[id] = { status: "ok", t: Date.now(), window: w, data: C.summarizeNwsObservations(j.features, w.start, w.end) };
+      var x = C.nwsToReports(j.features);
+      obs[id] = { status: "ok", source: "nws", note: reason, t: Date.now(), date: C.localDate(s.tz, 0), reports: x.reports, fiveMin: x.fiveMin };
+      finishObs(id);
+      obsCachePut(id);
     }, function (err) {
-      obs[id] = { status: "error", t: Date.now(), error: explain(err, "api.weather.gov") };
+      obs[id] = prev.reports ? Object.assign(prev, { status: "ok", note: reason }) : { status: "error", t: Date.now(), error: reason + ". " + explain(err, "api.weather.gov") };
     }).then(scheduleRender);
   }
+
+  function ageText(ms) {
+    var m = Math.max(0, Math.round(ms / 60000));
+    return m < 60 ? m + " min" : Math.floor(m / 60) + " h " + (m % 60) + " min";
+  }
+  function isStale(d) { return !!d.newest && Date.now() - d.newest > STALE_MS; }
 
   // ---- Derived values (day is explicit so the hero and post can use "tomorrow") ---
   function targetDate(s, day) { return C.localDate(s.tz, day); }
@@ -426,19 +570,25 @@
       '<line x1="' + x(cons.c.mean) + '" x2="' + x(cons.c.mean) + '" y1="1" y2="21" stroke="#2fd4ef" stroke-width="2.5"/>' + dots + "</svg>";
   }
 
-  // Measured-high summary in the station's unit.
+  // Measured-high summary in the station's unit: the high, when it was reported ("high at")
+  // and how recent the data is ("data to"), with a warning past 75 minutes.
   function measured(s) {
-    if (!s.obs || !s.icao) {
-      return { v: "—", s: s.polymarket && s.polymarket.source === "hko" ? "Settles on the Hong Kong Observatory reading" : "Live readings for US stations only" };
-    }
+    if (!hasObs(s)) return { v: "—", s: "Settles on the Hong Kong Observatory reading" };
     var o = obs[s.id];
-    if (!o || (o.status === "loading" && !o.data)) return { v: '<span class="sk"></span>', s: "Loading api.weather.gov…" };
-    if (o.status === "error") return { v: "n/a", s: esc(o.error) };
-    if (o.data && o.data.metarMax) {
-      var m = o.data.metarMax, val = s.unit === "F" ? C.roundHalfUp(C.cToF(m.c)) : C.roundHalfUp(m.c);
-      return { v: minus(val) + deg(s), s: "Routine METAR at " + timeAt(m.time, s.tz) };
+    if (!o || (!o.data && o.status !== "error")) return { v: '<span class="sk"></span>', s: "Loading METARs…" };
+    if (!o.data) return { v: "n/a", s: esc(o.error) };
+    var d = o.data, v = "—", sub = [];
+    if (d.metarMax) {
+      var val = s.unit === "F" ? C.roundHalfUp(C.cToF(d.metarMax.c)) : C.roundHalfUp(d.metarMax.c);
+      v = minus(val) + deg(s);
+      sub.push("high at " + timeAt(d.metarMax.time, s.tz));
+    } else sub.push("No routine METAR yet today");
+    if (d.newest) {
+      var age = Date.now() - d.newest, stale = isStale(d);
+      sub.push('<span class="' + (stale ? "late" : "") + '" title="Newest report is ' + ageText(age) + ' old">' + (stale ? ICON_WARN : "") +
+        "data to " + timeAt(d.newest, s.tz) + (stale ? " (" + ageText(age) + " old)" : "") + "</span>");
     }
-    return { v: "—", s: "No routine METAR yet today" };
+    return { v: v, s: sub.join("<br>") };
   }
 
   // ---- Rendering ---------------------------------------------------------------
@@ -606,15 +756,25 @@
     var openMore = box.querySelector("details.more") ? box.querySelector("details.more").open : false;
     html += '<details class="more"' + (openMore ? " open" : "") + '><summary><span>Observations and settlement rules <span class="dim">· ' + (s.icao || "HKO") + "</span></span></summary><div class=\"body\">";
     html += "<div><h5>Measured today</h5>";
-    if (!s.obs || !s.icao) {
-      html += '<p class="sub">' + (s.polymarket && s.polymarket.source === "hko" ? "This market settles on the Hong Kong Observatory’s own reading, which is not loaded here." : "Live observations are only loaded for US stations (api.weather.gov).") + "</p>";
+    if (!hasObs(s)) {
+      html += '<p class="sub">This market settles on the Hong Kong Observatory’s own reading, which is not loaded here.</p>';
     } else {
       var o = obs[s.id];
-      if (!o || (o.status === "loading" && !o.data)) html += '<p class="sub">Loading observations…</p>';
-      else if (o.status === "error") html += '<p class="err">' + esc(o.error) + "</p>";
+      if (!o || (!o.data && o.status !== "error")) html += '<p class="sub">Loading observations…</p>';
+      else if (!o.data) html += '<p class="err">' + esc(o.error) + "</p>";
       else {
         var d = o.data, rule = obsRule(s);
-        html += '<p class="sub">Since local midnight' + (rule === "kalshi" ? " standard time (NWS climate day)" : "") + ", " + d.count + " reports.</p><dl class=\"facts\" style=\"margin-top:8px\">";
+        var srcName = o.source === "nws" ? '<a href="https://www.weather.gov/documentation/services-web-api" rel="noopener">api.weather.gov</a> (fallback)' : '<a href="https://mesonet.agron.iastate.edu/request/download.phtml" rel="noopener">Iowa Environmental Mesonet</a>';
+        html += '<p class="sub">Since local midnight' + (rule === "kalshi" ? " standard time (NWS climate day)" : "") + ", " + d.count + " METAR reports. Source: " + srcName + ".</p>";
+        if (o.note && o.source === "nws") html += '<p class="note">The Iowa Environmental Mesonet was not used: ' + esc(o.note) + ".</p>";
+        else if (o.note) html += '<p class="err">Could not refresh: ' + esc(o.note) + ". Showing the last data loaded.</p>";
+        if (d.newest && isStale(d)) {
+          html += '<div class="flag">' + ICON_WARN + "<span><b>Late data:</b> the newest report is " + ageText(Date.now() - d.newest) + " old (" + timeAt(d.newest, s.tz) +
+            "). The station or the data source is running late; newer reports may already be in the " +
+            '<a href="https://aviationweather.gov/api/data/metar?ids=' + s.icao + '&amp;format=raw&amp;hours=6" rel="noopener">raw METARs</a>.</span></div>';
+        }
+        html += '<dl class="facts" style="margin-top:8px">';
+        if (d.newest) html += "<dt>Data to</dt><dd>" + timeAt(d.newest, s.tz) + " (" + ageText(Date.now() - d.newest) + " ago)</dd>";
         if (d.metarMax) {
           var mf = C.cToF(d.metarMax.c);
           html += "<dt>Highest routine METAR</dt><dd><strong>" + (s.unit === "F" ? minus(C.roundHalfUp(mf)) + "°F" : minus(C.roundHalfUp(d.metarMax.c)) + "°C") + "</strong> from " + f1(d.metarMax.c) + "°C" + (d.metarMax.tenths ? "" : " (whole degrees, no T-group)") + ", " + timeAt(d.metarMax.time, s.tz) + "</dd>";
@@ -622,15 +782,17 @@
         } else html += "<dt>Highest routine METAR</dt><dd>No routine report yet</dd>";
         if (d.otherMax && (!d.metarMax || d.otherMax.c > d.metarMax.c)) {
           html += "<dt>Higher special report</dt><dd>" + f1(d.otherMax.c) + "°C at " + timeAt(d.otherMax.time, s.tz) +
-            ". It was not sent at the routine minute (:" + String(d.routineMinute).padStart(2, "0") + "), so it is probably a SPECI, which Polymarket does not count. Check the raw METARs.</dd>";
+            ". It was not sent at the station’s routine minutes (" + (d.routineMinutes || []).map(function (m) { return ":" + String(m).padStart(2, "0"); }).join(", ") + "), so it is probably a SPECI, which Polymarket does not count. Check the raw METARs.</dd>";
         }
         if (d.sixHourMax) html += "<dt>Six-hour max group</dt><dd>" + f1(d.sixHourMax.c) + "°C (" + minus(C.roundHalfUp(C.cToF(d.sixHourMax.c))) + "°F), " + timeAt(d.sixHourMax.time, s.tz) + "</dd>";
         if (d.fiveMinMax) {
-          var c5 = d.fiveMinMax.c, whole = Math.abs(c5 - Math.round(c5)) < 1e-9;
+          var c5 = d.fiveMinMax.c, whole = !d.fiveMinMax.tenths && Math.abs(c5 - Math.round(c5)) < 1e-9;
           html += "<dt>Highest 5-minute</dt><dd>" + (whole ? minus(Math.round(c5)) : f1(c5)) + "°C" +
-            (whole && s.unit === "F" ? ", somewhere between " + f1(C.cToF(c5 - 0.5)) + " and " + f1(C.cToF(c5 + 0.5)) + "°F" : "") + ", " + timeAt(d.fiveMinMax.time, s.tz) + "</dd>";
+            (whole && s.unit === "F" ? ", somewhere between " + f1(C.cToF(c5 - 0.5)) + " and " + f1(C.cToF(c5 + 0.5)) + "°F" : "") +
+            (!whole && s.unit === "F" ? " (" + minus(C.roundHalfUp(C.cToF(c5))) + "°F)" : "") + ", " + timeAt(d.fiveMinMax.time, s.tz) + "</dd>";
         }
-        if (d.latest) html += "<dt>Latest</dt><dd>" + f1(d.latest.c) + "°C at " + timeAt(d.latest.time, s.tz) + "</dd>";
+        if (d.latest) html += "<dt>Latest reading</dt><dd>" + f1(d.latest.c) + "°C at " + timeAt(d.latest.time, s.tz) + "</dd>";
+        if (s.country === "US" && s.kalshi && o.source === "iem" && !o.hfT) html += '<dt>Highest 5-minute</dt><dd class="dim">' + (o.hfFailed ? "Not available right now; retried in a few minutes" : "Loading…") + "</dd>";
         html += "</dl>";
         if (s.polymarket) html += '<p class="note">Polymarket counts routine METARs only (T-group, tenths of °C). Five-minute readings are not part of its rule.</p>';
         if (s.kalshi) html += '<p class="note">Kalshi settles on the official daily maximum, which can be higher than any hourly METAR.' + (C.isDaylightTime(s.tz, Date.now()) ? " During daylight saving time the NWS climate day runs 1:00 a.m. to 12:59 a.m. local time." : "") + "</p>";
@@ -805,11 +967,13 @@
       io.observe(document.getElementById("daily"));
     } else loadPostData();
   });
-  // Refresh observations every 5 minutes while the page is open and visible.
+  // While the page is visible, refetch once the 5-minute cache expires and redraw so the
+  // "data to" age and late-data warnings stay current.
   setInterval(function () {
     if (document.visibilityState !== "visible") return;
     loadObs(state.sel); loadObs(HERO_ID);
-  }, 5 * 60000);
+    scheduleRender();
+  }, 60000);
 })();
 </script>
 </body>

@@ -197,49 +197,96 @@
     return g ? (g[1] === "1" ? -1 : 1) * parseInt(g[2], 10) / 10 : null;
   }
 
-  // Summarise api.weather.gov observations for one station-day window [startMs, endMs).
-  // Returns the Polymarket-rule maximum (routine METARs only) plus the other readings.
-  //
-  // api.weather.gov drops the METAR/SPECI prefix from rawMessage, so special reports
-  // cannot be recognised from the text. Routine reports of an automated station go out
-  // at the same minute every hour (KLGA :51, KMIA :53), so the most common minute is
-  // taken as the routine one and reports at other minutes are kept apart as "other".
-  // When no minute covers at least half of the reports, every report counts as routine.
-  function summarizeNwsObservations(features, startMs, endMs) {
-    var out = { metarMax: null, otherMax: null, fiveMinMax: null, sixHourMax: null, latest: null, count: 0, routineMinute: null };
-    var reports = [];
-    (features || []).forEach(function (f) {
-      var p = f.properties || {};
-      var ts = Date.parse(p.timestamp);
-      if (!(ts >= startMs && ts < endMs)) return;
-      out.count++;
-      var raw = (p.rawMessage || "").trim();
-      var tv = p.temperature && p.temperature.value;
-      if (raw) reports.push({ ts: ts, raw: raw });
-      else if (tv !== null && tv !== undefined) {
-        if (!out.fiveMinMax || tv > out.fiveMinMax.c) out.fiveMinMax = { c: tv, time: ts };
-      }
-      if (tv !== null && tv !== undefined && (!out.latest || ts > out.latest.time)) out.latest = { c: tv, time: ts };
-    });
-
-    var byMinute = {};
+  // Minutes past the hour at which a station sends its routine reports.
+  // Neither api.weather.gov nor IEM says reliably which report is a SPECI: api.weather.gov
+  // drops the prefix, and IEM's own "routine" type keeps only one report per hour, which
+  // would lose London's :20 reports. Routine reports go out at fixed minutes (KLGA :51,
+  // EGLC :20 and :50, RKSI :00 and :30), so every minute seen at least twice and at least
+  // half as often as the most common one counts as routine. When those minutes do not
+  // cover half of the reports, or there are too few to tell, every report counts as routine.
+  function routineMinutes(reports) {
+    var byMinute = {}, max = 0;
     reports.forEach(function (r) { var m = new Date(r.ts).getUTCMinutes(); byMinute[m] = (byMinute[m] || 0) + 1; });
-    var best = null;
-    Object.keys(byMinute).forEach(function (m) { if (best === null || byMinute[m] > byMinute[best]) best = m; });
-    if (best !== null && byMinute[best] * 2 >= reports.length) out.routineMinute = +best;
+    Object.keys(byMinute).forEach(function (m) { if (byMinute[m] > max) max = byMinute[m]; });
+    if (max < 2) return null;
+    var mins = Object.keys(byMinute).filter(function (m) { return byMinute[m] >= Math.max(2, max / 2); }).map(Number).sort(function (a, b) { return a - b; });
+    var covered = 0;
+    mins.forEach(function (m) { covered += byMinute[m]; });
+    return covered * 2 >= reports.length ? mins : null;
+  }
 
-    reports.forEach(function (r) {
-      var routine = !/^SPECI\b/.test(r.raw) && (out.routineMinute === null || new Date(r.ts).getUTCMinutes() === out.routineMinute);
+  // Summarise one station-day window [startMs, endMs) from METAR texts of any source.
+  // reports: [{ts, raw}] routine and special METARs; fiveMin: optional [{ts, c}] readings.
+  // Returns the Polymarket-rule maximum (routine METARs only) plus the other readings.
+  function summarizeMetarReports(reports, startMs, endMs, fiveMin) {
+    var out = { metarMax: null, otherMax: null, fiveMinMax: null, sixHourMax: null, latest: null, newest: null, count: 0, routineMinutes: null };
+    var inWin = (reports || []).filter(function (r) { return r.raw && r.ts >= startMs && r.ts < endMs; });
+    out.count = inWin.length;
+    out.routineMinutes = routineMinutes(inWin);
+    inWin.forEach(function (r) {
+      var routine = !/^SPECI\b/.test(r.raw) && (out.routineMinutes === null || out.routineMinutes.indexOf(new Date(r.ts).getUTCMinutes()) >= 0);
       var t = metarTemp(r.raw);
       if (t) {
         var key = routine ? "metarMax" : "otherMax";
         if (!out[key] || t.c > out[key].c) out[key] = { c: t.c, tenths: t.tenths, time: r.ts, raw: r.raw };
+        if (!out.latest || r.ts > out.latest.time) out.latest = { c: t.c, time: r.ts };
       }
+      if (!out.newest || r.ts > out.newest) out.newest = r.ts;
       var six = metarSixHourMax(r.raw);
       // Only use a six-hour group whose whole period lies inside the day window.
       if (six !== null && r.ts - 6 * 3600000 >= startMs - 60000 && (!out.sixHourMax || six > out.sixHourMax.c)) {
         out.sixHourMax = { c: six, time: r.ts };
       }
+    });
+    (fiveMin || []).forEach(function (f) {
+      if (!(f.ts >= startMs && f.ts < endMs) || f.c === null || f.c === undefined) return;
+      if (!out.fiveMinMax || f.c > out.fiveMinMax.c) out.fiveMinMax = { c: f.c, time: f.ts, tenths: !!f.tenths };
+      if (!out.latest || f.ts > out.latest.time) out.latest = { c: f.c, time: f.ts };
+    });
+    return out;
+  }
+
+  // api.weather.gov features -> METAR reports (with rawMessage) and five-minute readings.
+  function nwsToReports(features) {
+    var reports = [], fiveMin = [];
+    (features || []).forEach(function (f) {
+      var p = f.properties || {};
+      var ts = Date.parse(p.timestamp);
+      var raw = (p.rawMessage || "").trim();
+      var tv = p.temperature && p.temperature.value;
+      if (raw) reports.push({ ts: ts, raw: raw });
+      else if (tv !== null && tv !== undefined) fiveMin.push({ ts: ts, c: tv });
+    });
+    return { reports: reports, fiveMin: fiveMin };
+  }
+
+  function summarizeNwsObservations(features, startMs, endMs) {
+    var x = nwsToReports(features);
+    return summarizeMetarReports(x.reports, startMs, endMs, x.fiveMin);
+  }
+
+  // Iowa Environmental Mesonet asos.py CSV (data=metar, tz=Etc/UTC, format=onlycomma):
+  // "station,valid,metar" then rows like "LGA,2026-11-19 12:51,KLGA 191251Z ...".
+  function parseIemCsv(text) {
+    var out = [];
+    String(text || "").split(/\r?\n/).forEach(function (line) {
+      var m = /^([A-Z0-9]{3,4}),(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}),(.+)$/.exec(line.trim());
+      if (m) out.push({ station: m[1], ts: Date.parse(m[2] + "T" + m[3] + ":00Z"), raw: m[4].trim() });
+    });
+    return out;
+  }
+
+  // IEM lists US stations without the leading K (KLGA -> LGA) and others by ICAO.
+  function iemStationId(icao) {
+    return /^K[A-Z0-9]{3}$/.test(icao) ? icao.slice(1) : icao;
+  }
+
+  // Five-minute (HFMETAR) rows from IEM -> readings in degrees C (tenths when a T-group is present).
+  function iemFiveMinute(rows) {
+    var out = [];
+    rows.forEach(function (r) {
+      var t = metarTemp(r.raw);
+      if (t) out.push({ ts: r.ts, c: t.c, tenths: t.tenths });
     });
     return out;
   }
@@ -249,7 +296,9 @@
     parseEnsemble: parseEnsemble, membersForDate: membersForDate, bucketProbs: bucketProbs, topBuckets: topBuckets,
     chanceAtOrAbove: chanceAtOrAbove, consensus: consensus, tzOffsetMinutes: tzOffsetMinutes, localDate: localDate,
     localMidnightUTC: localMidnightUTC, isDaylightTime: isDaylightTime, metarTemp: metarTemp,
-    metarSixHourMax: metarSixHourMax, summarizeNwsObservations: summarizeNwsObservations
+    metarSixHourMax: metarSixHourMax, summarizeNwsObservations: summarizeNwsObservations,
+    routineMinutes: routineMinutes, summarizeMetarReports: summarizeMetarReports, nwsToReports: nwsToReports,
+    parseIemCsv: parseIemCsv, iemStationId: iemStationId, iemFiveMinute: iemFiveMinute
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.TRCalc = api;
