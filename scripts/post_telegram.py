@@ -222,11 +222,37 @@ def send_telegram(token, chat_id, text, silent=False):
         raise SystemExit(f"Telegram error: {res.get('description')}")
 
 
+def plan_from_env():
+    now = datetime.now(timezone.utc)
+    return plan(now, os.environ.get("POST_KIND", "auto").strip() or "auto", os.environ.get("SCHEDULE", ""))
+
+
+def print_plan():
+    """--plan: write slot= and date= to $GITHUB_OUTPUT (slot is empty when skipped)."""
+    slot, value = plan_from_env()
+    if slot is None:
+        annotate("notice", value)
+        lines = "slot=\ndate=\n"
+    else:
+        annotate("notice", f"Planned: {slot} post for {value}")
+        lines = f"slot={slot}\ndate={value}\n"
+    out = os.environ.get("GITHUB_OUTPUT")
+    if out:
+        with open(out, "a", encoding="utf-8") as f:
+            f.write(lines)
+    else:
+        print(lines, end="")
+
+
 def main():
     dry_run = os.environ.get("DRY_RUN", "").strip() in ("1", "true", "yes")
     annotate("notice", "Mode: dry run, the message is only printed" if dry_run else "Mode: send to Telegram")
-    now = datetime.now(timezone.utc)
-    slot, date = plan(now, os.environ.get("POST_KIND", "auto").strip() or "auto", os.environ.get("SCHEDULE", ""))
+    # The workflow plans first (to check whether this post already went out) and passes
+    # the result on, so the slot cannot change between the two steps.
+    if os.environ.get("POST_SLOT", "").strip() in SLOTS and os.environ.get("POST_DATE", "").strip():
+        slot, date = os.environ["POST_SLOT"].strip(), os.environ["POST_DATE"].strip()
+    else:
+        slot, date = plan_from_env()
     if slot is None:
         annotate("notice", date)  # date holds the reason here
         return
@@ -261,6 +287,9 @@ def main():
 
 
 if __name__ == "__main__":
+    if "--plan" in sys.argv[1:]:
+        print_plan()
+        sys.exit(0)
     try:
         main()
     except SystemExit as e:

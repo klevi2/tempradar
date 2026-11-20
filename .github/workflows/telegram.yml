@@ -35,14 +35,51 @@ jobs:
   post:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      SCHEDULE: ${{ github.event.schedule }}
+      POST_KIND: ${{ inputs.kind || 'auto' }}
+      DRY_RUN: ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '1' || '0' }}
     steps:
       - uses: actions/checkout@v5
+
+      - name: Pick the post
+        id: plan
+        run: python3 scripts/post_telegram.py --plan
+
+      # Each post leaves a marker in the Actions cache (key: slot + date). If the marker
+      # exists, this post already went out, e.g. from an external trigger or a manual run,
+      # so a late scheduled run does not send it twice.
+      - name: Check whether this post already went out
+        id: seen
+        if: steps.plan.outputs.slot != ''
+        uses: actions/cache/restore@v5
+        with:
+          path: .posted
+          key: tg-posted-${{ steps.plan.outputs.slot }}-${{ steps.plan.outputs.date }}
+          lookup-only: true
+
+      - name: Already posted
+        if: steps.plan.outputs.slot != '' && steps.seen.outputs.cache-hit == 'true'
+        run: echo "::notice::The ${{ steps.plan.outputs.slot }} post for ${{ steps.plan.outputs.date }} already went out; skipped."
+
       - name: Build and send the post
+        id: post
+        if: steps.plan.outputs.slot != '' && steps.seen.outputs.cache-hit != 'true'
         run: python3 scripts/post_telegram.py
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           SITE_URL: ${{ vars.SITE_URL || 'https://klevi2.github.io/tempradar/' }}
-          SCHEDULE: ${{ github.event.schedule }}
-          POST_KIND: ${{ inputs.kind || 'auto' }}
-          DRY_RUN: ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '1' || '0' }}
+          POST_SLOT: ${{ steps.plan.outputs.slot }}
+          POST_DATE: ${{ steps.plan.outputs.date }}
+
+      - name: Mark the post as sent
+        if: steps.post.outcome == 'success' && env.DRY_RUN != '1'
+        run: mkdir -p .posted && echo "${{ steps.plan.outputs.slot }} ${{ steps.plan.outputs.date }}" > .posted/marker
+
+      - name: Save the marker
+        if: steps.post.outcome == 'success' && env.DRY_RUN != '1'
+        uses: actions/cache/save@v5
+        with:
+          path: .posted
+          key: tg-posted-${{ steps.plan.outputs.slot }}-${{ steps.plan.outputs.date }}

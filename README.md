@@ -78,7 +78,7 @@ Setup:
 
 The token and chat id live only in GitHub Secrets. They are never written to the code or printed in the log.
 
-GitHub starts scheduled runs on a best-effort basis: they can be late, and now and then one is skipped. On 19 November 2026 the 12:15 run started eight hours late. A scheduled run that starts more than three hours late is therefore skipped, so a stale post never lands next to the following one. To send a post outside the schedule, either run the workflow from the Actions tab, or change `.github/post-now` (add a log line) and push it to `main`; only pushes that touch that file trigger a post.
+GitHub starts scheduled runs on a best-effort basis: they can be late, and now and then one is skipped. On 19 November 2026 the 12:15 run started eight hours late. A scheduled run that starts more than three hours late is therefore skipped, so a stale post never lands next to the following one. Every post also leaves a marker in the Actions cache (key: post + date), and a run that finds the marker skips; a post sent by hand or by an outside trigger is therefore never repeated by a late scheduled run. To send a post outside the schedule, either run the workflow from the Actions tab, or change `.github/post-now` (add a log line) and push it to `main`; only pushes that touch that file trigger a post.
 
 GitHub turns off scheduled workflows in a public repository after 60 days without repository activity. If posts stop, re-enable the workflow on the Actions tab or push a commit.
 
