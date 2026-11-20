@@ -27,6 +27,7 @@
     <nav aria-label="Sections">
       <a href="#stations">Stations</a>
       <a href="#daily">Daily post</a>
+      <a href="#record">Track record</a>
       <a href="#method">Method</a>
     </nav>
     <a class="btn btn-primary btn-sm" href="https://t.me/tempradar_wx" rel="noopener"><svg aria-hidden="true"><use href="#i-send"/></svg>Join free channel</a>
@@ -110,6 +111,19 @@
         </div>
         <figure class="post" id="post" style="margin:0" aria-label="Example of the daily post"></figure>
       </div>
+    </div>
+  </section>
+
+  <section class="sec" id="record" aria-labelledby="rec-h">
+    <div class="wrap">
+      <div class="sec-h">
+        <div>
+          <p class="kicker">Track record</p>
+          <h2 id="rec-h">Does 60% mean 60%?</h2>
+          <p>Every Telegram post is logged and checked against the measured high the market settles on. If the chances are honest, buckets given 60% come true about 60% of the time.</p>
+        </div>
+      </div>
+      <div id="record-body"><p class="note">Loading the track record…</p></div>
     </div>
   </section>
 </main>
@@ -877,6 +891,70 @@
     TG_STATIONS.slice(0, POST_N).forEach(function (s) { loadEnsemble(s.id); });
   }
 
+  // ---- Track record: calibration of the Telegram posts ---------------------------
+  // Written daily by .github/workflows/score.yml on the "data" branch.
+  var RECORD_URL = "https://raw.githubusercontent.com/klevi2/tempradar/data/calibration.json";
+  var RECORD_RAW = ' <a href="https://github.com/klevi2/tempradar/tree/data" rel="noopener">Raw data</a>.';
+  var SLOT_NAME = { morning: "Morning (today)", noon: "Midday (tomorrow)", evening: "Evening (tomorrow)" };
+  function pctN(x) { return x === null || x === undefined ? "–" : Math.round(x * 100) + "%"; }
+  function loadRecord() {
+    fetch(RECORD_URL, { cache: "no-cache" }).then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    }).then(renderRecord, function (err) {
+      document.getElementById("record-body").innerHTML = '<p class="note">The track record could not be loaded (' + esc(err.message) + ")." + RECORD_RAW + "</p>";
+    });
+  }
+  function recStat(k, v, sub) {
+    return '<div class="stat"><div class="k">' + k + '</div><div class="v sm">' + v + '</div><div class="s">' + sub + "</div></div>";
+  }
+  // One row's picture: bar = how often it came true, tick = what the bot said.
+  function recBar(pred, obs) {
+    var W = 140;
+    return '<svg class="rec-bar" viewBox="0 0 ' + W + ' 12" aria-hidden="true"><rect x="0" y="3" width="' + W + '" height="6" rx="3" fill="var(--line)"/>' +
+      '<rect x="0" y="3" width="' + (obs * W).toFixed(1) + '" height="6" rx="3" fill="var(--accent)"/>' +
+      '<line x1="' + (pred * W).toFixed(1) + '" x2="' + (pred * W).toFixed(1) + '" y1="0" y2="12" stroke="var(--ink)" stroke-width="2"/></svg>';
+  }
+  function errLine(e, u) {
+    if (!e) return null;
+    var dir = e.bias > 0 ? "measured ran " + e.bias.toFixed(1) + "°" + u + " warmer than the consensus" : e.bias < 0 ? "measured ran " + Math.abs(e.bias).toFixed(1) + "°" + u + " colder than the consensus" : "no average bias";
+    return { v: e.mae.toFixed(1) + "°" + u, s: "average miss, " + dir + " (" + e.n + ")" };
+  }
+  function renderRecord(cal) {
+    var box = document.getElementById("record-body"), a = cal.groups && cal.groups.all;
+    if (!a || !a.forecasts) {
+      box.innerHTML = '<p class="note">Logging started on 20 Nov 2026. Each post is scored the morning after its day has ended' +
+        (cal.pending ? "; " + cal.pending + " station forecasts are waiting for their day to end" : "") +
+        ". Results show here as they come in. A probability band needs " + cal.min_cases + " cases before its number means much." + RECORD_RAW + "</p>";
+      return;
+    }
+    var eF = errLine(a.consensus_error.F, "F"), eC = errLine(a.consensus_error.C, "C");
+    var html = '<div class="stats rec-stats">' +
+      recStat("Top bucket came true", pctN(a.top1.hit_rate), "the bot gave it " + pctN(a.top1.predicted) + " on average; " + a.top1.hits + " of " + a.forecasts) +
+      recStat("Top three covered it", pctN(a.top3.hit_rate), "the bot gave them " + pctN(a.top3.predicted) + " together; " + a.top3.hits + " of " + a.forecasts) +
+      (eF ? recStat("Consensus miss, °F", eF.v, eF.s) : "") +
+      (eC ? recStat("Consensus miss, °C", eC.v, eC.s) : "") + "</div>";
+
+    html += '<div class="panel"><div class="panel-h"><h4>Stated chance vs how often it came true</h4><p class="sub">' +
+      a.forecasts + " station forecasts over " + cal.days + " days (" + esc(dayName(cal.first_date)) + "–" + esc(dayName(cal.last_date)) + ")</p></div>";
+    html += '<table class="mini rec"><thead><tr><th scope="col">Bot said</th><th scope="col" class="num">Buckets</th><th scope="col" class="num">Came true</th><th scope="col"><span class="sr-only">Picture</span></th><th scope="col" class="num">95% range</th></tr></thead><tbody>';
+    a.bins.forEach(function (b) {
+      if (!b.cases) return;
+      html += '<tr class="' + (b.enough ? "" : "few") + '"><td>' + Math.round(b.range[0] * 100) + "–" + Math.round(b.range[1] * 100) + "%</td>" +
+        '<td class="num">' + b.cases + '</td><td class="num">' + pctN(b.observed) + "</td><td>" + recBar(b.predicted, b.observed) + "</td>" +
+        '<td class="num">' + pctN(b.observed_95[0]) + "–" + pctN(b.observed_95[1]) + "</td></tr>";
+    });
+    html += "</tbody></table>";
+    html += '<p class="note">Bars show how often the buckets in each band came true; the tick marks the average chance the bot gave them. Honest chances put the bar end on the tick. Faded rows have fewer than ' + cal.min_cases + " buckets, too few to judge. The 95% range shows how far chance alone could move the number.</p>";
+    var bySlot = ["morning", "noon", "evening"].filter(function (k) { return cal.groups[k] && cal.groups[k].forecasts; }).map(function (k) {
+      var g = cal.groups[k];
+      return SLOT_NAME[k] + ": top bucket " + pctN(g.top1.hit_rate) + " (said " + pctN(g.top1.predicted) + ", " + g.forecasts + ")";
+    });
+    if (bySlot.length) html += '<p class="note">By post: ' + bySlot.join("; ") + ".</p>";
+    html += '<p class="note">Measured highs follow the Polymarket rule (routine METARs from aviationweather.gov). Updated ' + esc(cal.updated.replace("T", " ").replace("Z", " UTC")) + "." + RECORD_RAW + "</p></div>";
+    box.innerHTML = html;
+  }
+
   // ---- Interactions -------------------------------------------------------------
   var mobile = window.matchMedia("(max-width: 959px)");
   function select(id, opts) {
@@ -962,6 +1040,7 @@
   // ---- Start ----------------------------------------------------------------
   document.getElementById("verified").textContent = dayName(D.verified) + " " + D.verified.slice(0, 4);
   document.getElementById("n-stations").textContent = STATIONS.length;
+  loadRecord();
   syncControls();
   render();
   loadDeterministic().then(function () {

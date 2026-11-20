@@ -285,6 +285,17 @@ def main():
     send_telegram(token, chat_id, text, silent=SLOTS[slot]["silent"])
     annotate("notice", f"Posted {slot} post: {len(stations) - failures} of {len(stations)} stations for {date}.")
 
+    # Calibration log: keep the full distribution behind this post (see scripts/track.py).
+    # Logging must never fail the run: the post is out and must be marked as sent.
+    track_dir = os.environ.get("TRACK_DIR", "").strip()
+    if track_dir:
+        try:
+            import track
+            rec = track.forecast_record(slot, date, cfg, results, datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+            annotate("notice", f"Forecast logged: {track.save_forecast(track_dir, rec)}")
+        except Exception as e:
+            annotate("warning", f"Could not log the forecast for calibration: {type(e).__name__}: {e}")
+
 
 if __name__ == "__main__":
     if "--plan" in sys.argv[1:]:

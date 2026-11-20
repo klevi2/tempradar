@@ -19,7 +19,9 @@ def python_results():
     src = (ROOT / "stations.js").read_text(encoding="utf-8")
     cfg = json.loads(src.split("/*JSON-BEGIN*/")[1].split("/*JSON-END*/")[0])
     cases = json.loads((HERE / "cases.json").read_text(encoding="utf-8"))
-    out = {"rounding": [], "buckets": [], "consensus": [], "fixtures": []}
+    out = {"rounding": [], "buckets": [], "consensus": [], "metar": [], "fixtures": []}
+    for raw in cases["metar"]:
+        out["metar"].append(C.metar_temp(raw))
     for x in cases["rounding"]:
         out["rounding"].append({"x": x, "r": C.round_half_up(x), "f": C.round_half_up(C.c_to_f(x))})
     for v, w, par in cases["bucketStart"]:
