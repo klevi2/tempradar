@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""Daily TempRadar post to a Telegram channel.
+"""TempRadar posts to a Telegram channel, three times a day (see SLOTS).
 
-Posts tomorrow's model consensus and the three most likely buckets for every station
-marked "telegram": true in stations.js. Same data requests and the same calculation
+Each post gives the model consensus and the three most likely buckets for every station
+marked "telegram": true in stations.js: today's highs in the morning, tomorrow's at
+midday, and an evening update of tomorrow's. Same data requests and the same calculation
 as the website (see scripts/tempradar_calc.py and calc.js).
 
 Environment:
   TELEGRAM_BOT_TOKEN  bot token from @BotFather   (GitHub secret, never in code)
   TELEGRAM_CHAT_ID    channel, e.g. @yourchannel or -100...   (GitHub secret)
   SITE_URL            optional link to the site, e.g. https://user.github.io/tempradar/
+  SCHEDULE            cron string of a scheduled run (github.event.schedule)
+  POST_KIND           morning / noon / evening, or auto (default: pick by UTC time)
   DRY_RUN=1           print the message instead of sending it
 Standard library only.
 """
@@ -22,7 +25,6 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import tempradar_calc as calc  # noqa: E402
@@ -103,13 +105,51 @@ def ens_url(s, cfg):
     return OM_ENS + "?" + urllib.parse.urlencode(q, safe=",/")
 
 
-def local_date(tz, add_days, now=None):
-    now = now or datetime.now(timezone.utc)
-    try:
-        zone = ZoneInfo(tz)
-    except Exception:  # Windows has no system time zone database
-        raise SystemExit(f"Time zone {tz} not found. On Windows run: python -m pip install tzdata")
-    return (now.astimezone(zone) + timedelta(days=add_days)).date().isoformat()
+# Three posts a day (UTC). The cron strings must match .github/workflows/telegram.yml.
+# Every post covers one date for all stations; "offset" is that date relative to the
+# UTC date of the slot. Dates are each station's local calendar day.
+SLOTS = {
+    "morning": {"cron": "15 6 * * *", "at": (6, 15), "offset": 0, "silent": False,
+                "title": "Today’s highs", "sub": "Model consensus and the three most likely buckets."},
+    "noon": {"cron": "15 12 * * *", "at": (12, 15), "offset": 1, "silent": False,
+             "title": "Tomorrow’s highs", "sub": "Model consensus and the three most likely buckets."},
+    "evening": {"cron": "15 21 * * *", "at": (21, 15), "offset": 1, "silent": True,
+                "title": "Tomorrow’s highs",
+                "sub": "Evening update with the afternoon (12Z) model runs: consensus and the three most likely buckets."},
+}
+# GitHub sometimes starts scheduled runs hours late. A run more than this late is skipped,
+# so a stale post never lands next to the following one.
+MAX_LATE = timedelta(hours=3)
+
+
+def plan(now, kind="auto", schedule=""):
+    """Pick the slot and target date for this run.
+
+    Returns (slot, "YYYY-MM-DD"), or (None, reason) when a late scheduled run is skipped.
+    schedule: the cron string of a scheduled run (github.event.schedule), else empty.
+    kind: "morning" / "noon" / "evening" for a manual run, "auto" to pick by UTC time.
+    """
+    schedule = (schedule or "").strip()
+    if schedule:
+        name = next((k for k, v in SLOTS.items() if v["cron"] == schedule), None)
+        if name is None:
+            return None, f"unknown schedule {schedule!r}"
+        h, m = SLOTS[name]["at"]
+        nominal = now.replace(hour=h, minute=m, second=0, microsecond=0)
+        if nominal > now:  # e.g. an evening run that starts after midnight UTC
+            nominal -= timedelta(days=1)
+        late = now - nominal
+        if late > MAX_LATE:
+            return None, f"{name} run started {int(late.total_seconds() // 60)} min after {h:02d}:{m:02d} UTC; skipped"
+        return name, (nominal.date() + timedelta(days=SLOTS[name]["offset"])).isoformat()
+    if kind in SLOTS:
+        name = kind
+    else:
+        name = "morning" if 3 <= now.hour < 12 else "noon" if 12 <= now.hour < 21 else "evening"
+    base = now.date()
+    if name == "evening" and now.hour < 3:
+        base -= timedelta(days=1)  # just after midnight: still the previous evening's post
+    return name, (base + timedelta(days=SLOTS[name]["offset"])).isoformat()
 
 
 def station_summary(s, cfg, date):
@@ -138,9 +178,10 @@ def fmt1(v):
     return s.replace("-", calc.MINUS, 1) if s.startswith("-") else s
 
 
-def build_message(cfg, results, date, site_url):
+def build_message(cfg, results, date, site_url, slot="noon"):
     day = datetime.fromisoformat(date).strftime("%a %d %b").replace(" 0", " ")
-    lines = [f"<b>Tomorrow’s highs, {day}</b>", "Model consensus and the three most likely buckets.", ""]
+    s0 = SLOTS[slot]
+    lines = [f"<b>{s0['title']}, {day}</b>", s0["sub"], ""]
     for s, r in results:
         name = f"<b>{html_escape(s['city'])}</b> {html_escape(s['place'])} ({s['icao'] or 'HKO'})"
         lines.append(name)
@@ -152,15 +193,16 @@ def build_message(cfg, results, date, site_url):
             lines.append(cons + f" ({r['probs']['n']} ensemble members)")
             lines.append("   ".join(f"{b['label']} {calc.pct_label(b['p'])}" for b in r["top"]) or "No ensemble data.")
         lines.append("")
-    lines.append("Data only, not trading advice. Local calendar day at each station.")
+    lines.append("Data only, not trading advice. Dates are each station’s local calendar day.")
     if site_url:
         lines.append(f'<a href="{html_escape(site_url)}">Full table and rules: TempRadar</a>')
     return "\n".join(lines)
 
 
-def send_telegram(token, chat_id, text):
+def send_telegram(token, chat_id, text, silent=False):
     body = urllib.parse.urlencode({
         "chat_id": chat_id, "text": text, "parse_mode": "HTML", "disable_web_page_preview": "true",
+        "disable_notification": "true" if silent else "false",
     }).encode()
     req = urllib.request.Request(f"https://api.telegram.org/bot{token}/sendMessage", data=body,
                                  headers={"User-Agent": USER_AGENT})
@@ -183,14 +225,18 @@ def send_telegram(token, chat_id, text):
 def main():
     dry_run = os.environ.get("DRY_RUN", "").strip() in ("1", "true", "yes")
     annotate("notice", "Mode: dry run, the message is only printed" if dry_run else "Mode: send to Telegram")
+    now = datetime.now(timezone.utc)
+    slot, date = plan(now, os.environ.get("POST_KIND", "auto").strip() or "auto", os.environ.get("SCHEDULE", ""))
+    if slot is None:
+        annotate("notice", date)  # date holds the reason here
+        return
+    annotate("notice", f"Slot: {slot}, date {date}")
     cfg = load_config()
     stations = [s for s in cfg["stations"] if s.get("telegram")]
     if not stations:
         raise SystemExit('No station has "telegram": true in stations.js')
-    now = datetime.now(timezone.utc)
     results, failures = [], 0
     for s in stations:
-        date = local_date(s["tz"], 1, now)
         try:
             results.append((s, station_summary(s, cfg, date)))
         except Exception as e:  # one station failing should not stop the post
@@ -201,8 +247,7 @@ def main():
     if failures == len(stations):
         raise SystemExit("All stations failed; nothing posted.")
 
-    date = local_date(stations[0]["tz"], 1, now)
-    text = build_message(cfg, results, date, os.environ.get("SITE_URL", "").strip())
+    text = build_message(cfg, results, date, os.environ.get("SITE_URL", "").strip(), slot)
 
     if dry_run:
         print(text)
@@ -211,8 +256,8 @@ def main():
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
     if not token or not chat_id:
         raise SystemExit("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set (GitHub secrets), or use DRY_RUN=1.")
-    send_telegram(token, chat_id, text)
-    annotate("notice", f"Posted {len(stations) - failures} of {len(stations)} stations for {date}.")
+    send_telegram(token, chat_id, text, silent=SLOTS[slot]["silent"])
+    annotate("notice", f"Posted {slot} post: {len(stations) - failures} of {len(stations)} stations for {date}.")
 
 
 if __name__ == "__main__":

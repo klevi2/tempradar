@@ -54,9 +54,17 @@ Day definition: Polymarket counts reports whose local time, including daylight s
 
 Markets are added and changed often. Read the rules of the market you trade, and update `stations.js` when a station changes. Each station is one JSON line, and the JSON between the two marker comments must stay valid.
 
-## Daily Telegram post
+## Telegram posts
 
-Channel: [t.me/tempradar_wx](https://t.me/tempradar_wx). `scripts/post_telegram.py` posts tomorrow's consensus and three most likely buckets for the stations marked `"telegram": true` in `stations.js` (eight by default). `.github/workflows/telegram.yml` runs it every day at 12:15 UTC. It uses only the Python standard library.
+Channel: [t.me/tempradar_wx](https://t.me/tempradar_wx). `scripts/post_telegram.py` posts the model consensus and three most likely buckets for the stations marked `"telegram": true` in `stations.js` (eight by default). `.github/workflows/telegram.yml` runs it three times a day:
+
+| UTC | Budapest (winter / summer) | Post |
+|---|---|---|
+| 06:15 | 07:15 / 08:15 | Today's highs |
+| 12:15 | 13:15 / 14:15 | Tomorrow's highs |
+| 21:15 | 22:15 / 23:15 | Tomorrow's highs, evening update with the 12Z model runs (sent without a notification sound) |
+
+Each post covers one date for all stations, read as each station's local calendar day. The script uses only the Python standard library.
 
 Setup:
 
@@ -66,11 +74,11 @@ Setup:
    - secret `TELEGRAM_BOT_TOKEN`: the bot token
    - secret `TELEGRAM_CHAT_ID`: `@yourchannel` for a public channel, or the numeric `-100…` id for a private one
    - optional variable (not secret) `SITE_URL`: the site address for the link at the end of the post (default: https://klevi2.github.io/tempradar/)
-4. Open **Actions → Daily Telegram post → Run workflow**. A run with *dry run* ticked only prints the message in the log; untick it to send a real post.
+4. Open **Actions → Daily Telegram post → Run workflow**. Pick the post (*auto* chooses by the current UTC time). A run with *dry run* ticked only prints the message in the log; untick it to send a real post.
 
 The token and chat id live only in GitHub Secrets. They are never written to the code or printed in the log.
 
-GitHub starts scheduled runs on a best-effort basis: they can be late, and now and then one is skipped. To send a post outside the schedule, either run the workflow from the Actions tab, or change `.github/post-now` (add a log line) and push it to `main`; only pushes that touch that file trigger a post.
+GitHub starts scheduled runs on a best-effort basis: they can be late, and now and then one is skipped. On 19 November 2026 the 12:15 run started eight hours late. A scheduled run that starts more than three hours late is therefore skipped, so a stale post never lands next to the following one. To send a post outside the schedule, either run the workflow from the Actions tab, or change `.github/post-now` (add a log line) and push it to `main`; only pushes that touch that file trigger a post.
 
 GitHub turns off scheduled workflows in a public repository after 60 days without repository activity. If posts stop, re-enable the workflow on the Actions tab or push a commit.
 
@@ -82,9 +90,11 @@ Visits are counted with [GoatCounter](https://www.goatcounter.com/) (site code `
 
 Open `index.html` in a browser. All data requests go straight to the public APIs. Chrome refuses to load web fonts from `file://`, so the page falls back to the system font there. For the real font, serve the folder over HTTP, for example with `npx serve .`.
 
-Tests: `python3 tests/test_parity.py` (needs Node.js) checks that `calc.js` and `scripts/tempradar_calc.py` give identical results on saved ensemble data and edge cases. `node tests/metar_test.js` checks the METAR and observation helpers. GitHub Actions runs both on every push.
+Tests: `python3 tests/test_parity.py` (needs Node.js) checks that `calc.js` and `scripts/tempradar_calc.py` give identical results on saved ensemble data and edge cases. `node tests/metar_test.js` checks the METAR and observation helpers, and `python3 tests/test_post_slots.py` the Telegram posting times and dates. GitHub Actions runs all three on every push.
 
-Telegram post without sending: `DRY_RUN=1 python3 scripts/post_telegram.py`. On Windows, first run `python -m pip install tzdata`, because Windows has no built-in time zone database.
+Telegram post without sending: `DRY_RUN=1 POST_KIND=noon python3 scripts/post_telegram.py` (`morning`, `noon`, `evening` or `auto`).
+
+The page refreshes itself while it is open and visible: models every 10 minutes, ensembles every 30 minutes (new ensemble runs arrive only every 6 hours, and each load costs 16 of the visitor's free Open-Meteo calls), measurements every 5 minutes.
 
 ## Files
 
@@ -94,7 +104,7 @@ Telegram post without sending: `DRY_RUN=1 python3 scripts/post_telegram.py`. On 
 | `calc.js` | Calculation core: rounding, buckets, consensus, METAR parsing |
 | `stations.js` | Stations and model settings, shared with Python |
 | `scripts/tempradar_calc.py` | Python port of `calc.js` |
-| `scripts/post_telegram.py` | Daily Telegram post |
+| `scripts/post_telegram.py` | Telegram posts, three a day |
 | `tests/` | Parity test and saved fixtures |
 | `fonts/` | Barlow, self-hosted (SIL Open Font License, see `fonts/OFL.txt`) |
 

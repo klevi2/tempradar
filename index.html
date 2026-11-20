@@ -95,9 +95,9 @@
     <div class="wrap">
       <div class="tg">
         <div>
-          <p class="kicker">Daily at 12:15 UTC</p>
-          <h2 id="tg-h">Tomorrow’s highs in your Telegram, every day.</h2>
-          <p>One short post a day: model consensus and the three most likely buckets for eight key cities. Same numbers as this page, computed from the same code.</p>
+          <p class="kicker">Three times a day: 06:15, 12:15 and 21:15 UTC</p>
+          <h2 id="tg-h">Today’s and tomorrow’s highs in your Telegram.</h2>
+          <p>Three short posts a day: today’s highs in the morning, tomorrow’s at midday, and a quiet evening update after the afternoon model runs. Model consensus and the three most likely buckets for eight key cities, the same numbers as this page, computed from the same code.</p>
           <ul>
             <li>Consensus of 9 models per station</li>
             <li>Top three buckets with ensemble chances</li>
@@ -261,6 +261,10 @@
       (s.unit === "F" ? "&temperature_unit=fahrenheit" : "");
   }
 
+  // Refresh timing (see the refresh loop at the end). Cache lifetimes are a minute shorter
+  // than the refresh interval so a refresh never gets a cached copy back.
+  var REFRESH_MS = 10 * 60000, ENS_MAX_AGE = 30 * 60000, DET_TTL_MIN = 9, ENS_TTL_MIN = 29;
+
   function loadDeterministic() {
     var groups = { F: [], C: [] };
     STATIONS.forEach(function (s) { groups[s.unit].push(s); });
@@ -269,7 +273,7 @@
       var list = groups[unit];
       for (var i = 0; i < list.length; i += 40) {
         (function (chunk) {
-          jobs.push(getJSON(detUrl(chunk, unit), { ttl: 30 }).then(function (j) {
+          jobs.push(getJSON(detUrl(chunk, unit), { ttl: DET_TTL_MIN }).then(function (j) {
             var arr = Array.isArray(j) ? j : [j];
             arr.forEach(function (loc, k) {
               var s = chunk[k], models = {};
@@ -285,18 +289,24 @@
     });
     return Promise.all(jobs).then(function () {
       detError = null; detLoadedAt = new Date();
-    }, function (err) { detError = explain(err, "Open-Meteo"); });
+    }, function (err) {
+      // On a failed refresh the previous numbers stay on screen; say how old they are.
+      detError = (detLoadedAt ? "Could not refresh; showing data from " + hhmm(detLoadedAt) + ". " : "") + explain(err, "Open-Meteo");
+    });
   }
 
-  function loadEnsemble(id) {
-    var s = byId[id];
-    if (ens[id] && (ens[id].status === "loading" || ens[id].status === "ok")) return;
-    ens[id] = { status: "loading" };
-    scheduleRender();
-    omQueue(function () { return getJSON(ensUrl(s), { ttl: 60 }); }).then(function (j) {
-      ens[id] = { status: "ok", data: C.parseEnsemble(j, D.ensembleModels) };
+  // refresh=true reloads an ensemble once it is older than ENS_MAX_AGE; the old numbers
+  // stay on screen until the new ones arrive, and also if the reload fails.
+  function loadEnsemble(id, refresh) {
+    var s = byId[id], cur = ens[id];
+    if (cur && cur.status === "loading") return;
+    var old = cur && cur.status === "ok" ? cur : null;
+    if (old && !(refresh && Date.now() - old.t >= ENS_MAX_AGE)) return;
+    if (!old) { ens[id] = { status: "loading" }; scheduleRender(); }
+    omQueue(function () { return getJSON(ensUrl(s), { ttl: ENS_TTL_MIN }); }).then(function (j) {
+      ens[id] = { status: "ok", t: Date.now(), data: C.parseEnsemble(j, D.ensembleModels) };
     }, function (err) {
-      ens[id] = { status: "error", error: explain(err, "Open-Meteo ensemble") };
+      if (!old) ens[id] = { status: "error", error: explain(err, "Open-Meteo ensemble") };
     }).then(scheduleRender);
   }
 
@@ -626,7 +636,7 @@
     el.className = "status";
     var ref = byId.klga || STATIONS[0];
     var txt = DAY_LABEL[state.day] + "’s high in each station’s local time (" + dayName(C.localDate(ref.tz, state.day)) + " in New York). ";
-    txt += detLoadedAt ? "Models loaded " + hhmm(detLoadedAt) + "." : "Loading models…";
+    txt += detLoadedAt ? "Updated " + hhmm(detLoadedAt) + ", refreshes every 10 minutes." : "Loading models…";
     el.textContent = txt;
   }
 
@@ -967,13 +977,28 @@
       io.observe(document.getElementById("daily"));
     } else loadPostData();
   });
-  // While the page is visible, refetch once the 5-minute cache expires and redraw so the
-  // "data to" age and late-data warnings stay current.
+  // Automatic refresh while the page is visible:
+  // - models (consensus) every 10 minutes;
+  // - ensembles when older than 30 minutes: new ensemble runs arrive only every 6 hours,
+  //   and each load costs 16 of the visitor's 10,000 free Open-Meteo calls a day;
+  // - measurements on their own 5-minute cache.
+  // Coming back to a hidden tab after 10 minutes refreshes at once.
+  var lastRefresh = Date.now();
+  function refreshAll() {
+    lastRefresh = Date.now();
+    loadDeterministic().then(scheduleRender);
+    Object.keys(ens).forEach(function (id) { loadEnsemble(id, true); });
+    loadObs(state.sel); loadObs(HERO_ID);
+  }
   setInterval(function () {
     if (document.visibilityState !== "visible") return;
-    loadObs(state.sel); loadObs(HERO_ID);
-    scheduleRender();
+    if (Date.now() - lastRefresh >= REFRESH_MS) refreshAll();
+    else { loadObs(state.sel); loadObs(HERO_ID); }
+    scheduleRender(); // keeps "data to" ages and late-data warnings current
   }, 60000);
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible" && Date.now() - lastRefresh >= REFRESH_MS) refreshAll();
+  });
 })();
 </script>
 </body>
