@@ -2,12 +2,18 @@ name: Daily Telegram post
 
 on:
   schedule:
-    # Every day at 12:15 UTC. At that time all default stations (Americas, Europe, Seoul)
-    # are on the same local date, so "tomorrow" is the same day everywhere.
-    # GitHub may start scheduled runs a few minutes late.
-    - cron: "15 12 * * *"
+    # Three posts a day (UTC). These strings must match SLOTS in scripts/post_telegram.py.
+    - cron: "15 6 * * *"   # morning: today's highs
+    - cron: "15 12 * * *"  # midday: tomorrow's highs
+    - cron: "15 21 * * *"  # evening: tomorrow's highs with the 12Z runs (sent silently)
+    # GitHub can start scheduled runs late; a run more than 3 hours late is skipped.
   workflow_dispatch:
     inputs:
+      kind:
+        description: "Which post (auto picks by the current UTC time)"
+        type: choice
+        options: [auto, morning, noon, evening]
+        default: auto
       dry_run:
         description: "Only print the message in the log, do not send it"
         type: boolean
@@ -28,7 +34,7 @@ concurrency:
 jobs:
   post:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - name: Build and send the post
@@ -37,4 +43,6 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           SITE_URL: ${{ vars.SITE_URL || 'https://klevi2.github.io/tempradar/' }}
+          SCHEDULE: ${{ github.event.schedule }}
+          POST_KIND: ${{ inputs.kind || 'auto' }}
           DRY_RUN: ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '1' || '0' }}
