@@ -2,6 +2,7 @@ name: Tests
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 permissions:
@@ -13,11 +14,15 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v5
+      - name: Workflow files are valid YAML
+        run: python3 -c "import glob, yaml; [yaml.safe_load(open(f, encoding='utf-8')) for f in glob.glob('.github/workflows/*.yml')]; print('workflows OK')"
       - name: JavaScript and Python give identical results
         run: python3 tests/test_parity.py
       - name: METAR and observation helpers
         run: node tests/metar_test.js
       - name: Telegram posting slots
         run: python3 tests/test_post_slots.py
+      - name: Calibration scoring
+        run: python3 tests/test_track.py
       - name: Telegram script reads the station list
         run: python3 -c "import sys; sys.path.insert(0, 'scripts'); import post_telegram as p; cfg = p.load_config(); s = [x for x in cfg['stations'] if x.get('telegram')]; assert 6 <= len(s) <= 8, len(s); print('telegram stations:', ', '.join(x['id'] for x in s))"

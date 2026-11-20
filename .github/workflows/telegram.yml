@@ -25,7 +25,7 @@ on:
     paths: [".github/post-now"]
 
 permissions:
-  contents: read
+  contents: write  # only to log each post on the "data" branch (calibration)
 
 concurrency:
   group: telegram-post
@@ -41,6 +41,14 @@ jobs:
       DRY_RUN: ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '1' || '0' }}
     steps:
       - uses: actions/checkout@v5
+
+      # The calibration log lives on the "data" branch. Posting never depends on it.
+      - name: Check out the calibration log
+        uses: actions/checkout@v5
+        continue-on-error: true
+        with:
+          ref: data
+          path: track
 
       - name: Pick the post
         id: plan
@@ -72,6 +80,7 @@ jobs:
           SITE_URL: ${{ vars.SITE_URL || 'https://klevi2.github.io/tempradar/' }}
           POST_SLOT: ${{ steps.plan.outputs.slot }}
           POST_DATE: ${{ steps.plan.outputs.date }}
+          TRACK_DIR: ${{ hashFiles('track/README.md') != '' && 'track' || '' }}
 
       - name: Mark the post as sent
         if: steps.post.outcome == 'success' && env.DRY_RUN != '1'
@@ -83,3 +92,9 @@ jobs:
         with:
           path: .posted
           key: tg-posted-${{ steps.plan.outputs.slot }}-${{ steps.plan.outputs.date }}
+
+      - name: Store the forecast for calibration
+        if: steps.post.outcome == 'success' && env.DRY_RUN != '1' && hashFiles('track/README.md') != ''
+        continue-on-error: true
+        run: |
+          bash scripts/commit_data.sh "Forecast, ${{ steps.plan.outputs.slot }} post for ${{ steps.plan.outputs.date }}"

@@ -8,7 +8,9 @@ const src = fs.readFileSync(path.join(__dirname, "..", "stations.js"), "utf8");
 const cfg = JSON.parse(src.split("/*JSON-BEGIN*/")[1].split("/*JSON-END*/")[0]);
 const cases = JSON.parse(fs.readFileSync(path.join(__dirname, "cases.json"), "utf8"));
 
-const out = { rounding: [], buckets: [], consensus: [], fixtures: [] };
+const out = { rounding: [], buckets: [], consensus: [], metar: [], fixtures: [] };
+
+cases.metar.forEach(raw => out.metar.push(C.metarTemp(raw)));
 
 cases.rounding.forEach(x => out.rounding.push({ x, r: C.roundHalfUp(x), f: C.roundHalfUp(C.cToF(x)) }));
 cases.bucketStart.forEach(([v, w, par]) => out.buckets.push({ v, w, par, start: C.bucketStart(v, w, par), label: C.bucketLabel(C.bucketStart(v, w, par), w, w === 2 ? "F" : "C") }));

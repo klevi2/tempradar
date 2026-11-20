@@ -115,6 +115,26 @@ def consensus(model_values):
     return {"mean": js_round(mean * 10) / 10, "min": min(vals), "max": max(vals), "n": len(vals)}
 
 
+_T_GROUP = re.compile(r"(?:^|\s)T([01])(\d{3})([01])(\d{3})(?=\s|$)")
+_BODY_TEMP = re.compile(r"(?:^|\s)(M?\d{2})/(M?\d{2})?(?=\s|$)")
+
+
+def metar_temp(raw):
+    """Temperature of one METAR, as in calc.js metarTemp: the RMK T-group in tenths of a
+    degree C, else the body group in whole degrees C. Returns {"c", "tenths"} or None."""
+    if not raw:
+        return None
+    t = _T_GROUP.search(raw)
+    if t:
+        return {"c": (-1 if t.group(1) == "1" else 1) * int(t.group(2)) / 10, "tenths": True}
+    body = re.split(r"\sRMK\s", raw)[0]
+    g = _BODY_TEMP.search(body)
+    if g:
+        s = g.group(1)
+        return {"c": (-1 if s[0] == "M" else 1) * int(s.replace("M", "")), "tenths": False}
+    return None
+
+
 def pct_label(p):
     """Same text as the site: <1%, >99%, otherwise a whole percent."""
     if 0 < p < 0.005:

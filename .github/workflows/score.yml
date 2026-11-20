@@ -1,0 +1,33 @@
+name: Score forecasts
+
+# Compares the logged Telegram forecasts with the measured daily highs (Polymarket rule,
+# aviationweather.gov) and rebuilds calibration.json on the "data" branch.
+# A station-day is scored once its local day has ended and the next day's first report
+# is in, so 09:40 UTC covers yesterday everywhere; 16:40 UTC is a second chance.
+on:
+  schedule:
+    - cron: "40 9 * * *"
+    - cron: "40 16 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write  # to push to the "data" branch
+
+concurrency:
+  group: tempradar-score
+  cancel-in-progress: false
+
+jobs:
+  score:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/checkout@v5
+        with:
+          ref: data
+          path: track
+      - name: Score finished days
+        run: python3 scripts/track.py verify --dir track
+      - name: Save the scores
+        run: bash scripts/commit_data.sh "Scores, $(date -u +%Y-%m-%d)"

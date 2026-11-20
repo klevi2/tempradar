@@ -82,6 +82,17 @@ GitHub starts scheduled runs on a best-effort basis: they can be late, and now a
 
 GitHub turns off scheduled workflows in a public repository after 60 days without repository activity. If posts stop, re-enable the workflow on the Actions tab or push a commit.
 
+## Track record (calibration)
+
+Question: when the bot gives a bucket 60%, does it come true about 60% of the time?
+
+- After every real Telegram post, `telegram.yml` saves the full distribution behind it (every bucket with its share of the 161 ensemble members, plus the consensus) to the `data` branch: `forecasts/<date>/<slot>.json`.
+- `score.yml` runs daily at 09:40 and 16:40 UTC. For each station-day that has ended, and once the next day's first report is in, it takes the measured high by the Polymarket rule from aviationweather.gov (routine METARs only, T-group in tenths of °C, local calendar day, rounded halves up), saves it to `outcomes/<date>.json`, and rebuilds `calibration.json`.
+- `calibration.json` holds, overall, per post and per station: for each 10% probability band, how many buckets fell in it and how often they came true (with a 95% range); the top-bucket and top-three hit rates against the chances the bot gave them; the Brier score; and the consensus bias and mean miss in degrees.
+- The page shows it in the "Track record" section, read straight from the `data` branch.
+
+Logging started on 20 November 2026; earlier posts were not kept, and old ensemble forecasts cannot be fetched again. With eight stations and three posts a day, the busier probability bands pass 20 cases within a week or so; the 60–90% bands take longer, because the bot rarely gives that much.
+
 ## Visitor statistics
 
 Visits are counted with [GoatCounter](https://www.goatcounter.com/) (site code `tempradarwx`, dashboard at tempradarwx.goatcounter.com). GoatCounter sets no cookies and stores no personal data, so the page needs no cookie banner. Visits from localhost and `file://` are not counted.
@@ -105,6 +116,8 @@ The page refreshes itself while it is open and visible: models every 10 minutes,
 | `stations.js` | Stations and model settings, shared with Python |
 | `scripts/tempradar_calc.py` | Python port of `calc.js` |
 | `scripts/post_telegram.py` | Telegram posts, three a day |
+| `scripts/track.py` | Forecast log, measured highs, calibration (`data` branch) |
+| `scripts/commit_data.sh` | Pushes log and score updates to the `data` branch |
 | `tests/` | Parity test and saved fixtures |
 | `fonts/` | Barlow, self-hosted (SIL Open Font License, see `fonts/OFL.txt`) |
 

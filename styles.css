@@ -330,3 +330,10 @@ footer li { margin-bottom: 6px; max-width: 70ch; }
 /* Late measured data ("data to" older than 75 minutes) */
 .late { color: var(--warn-ink); font-weight: 500; }
 .late svg { width: 11px; height: 11px; margin-right: 3px; vertical-align: -1px; color: var(--warn); }
+
+/* Track record (calibration) */
+.rec-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 12px; }
+@media (max-width: 860px) { .rec-stats { grid-template-columns: 1fr 1fr; } }
+table.mini.rec td { vertical-align: middle; }
+table.mini.rec tr.few td { color: var(--muted); }
+.rec-bar { display: block; width: 100%; max-width: 160px; min-width: 70px; height: 12px; margin: 0 12px; }
